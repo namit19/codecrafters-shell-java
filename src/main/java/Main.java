@@ -10,7 +10,13 @@ public class Main {
             String input = scanner.nextLine();
             String command = input.split(" ")[0];
 
+            if (command.equals("exit")) {
+                break;
+            }
+
             System.out.println(command + ": command not found");
         }
+
+        scanner.close();
     }
 }
