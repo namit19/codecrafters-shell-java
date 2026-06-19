@@ -8,13 +8,23 @@ public class Main {
             System.out.print("$ ");
 
             String input = scanner.nextLine();
-            String command = input.split(" ")[0];
 
-            if (command.equals("exit")) {
+            if (input.equals("exit 0")) {
                 break;
             }
 
-            System.out.println(command + ": command not found");
+            String[] parts = input.split(" ", 2);
+            String command = parts[0];
+
+            if (command.equals("echo")) {
+                if (parts.length > 1) {
+                    System.out.println(parts[1]);
+                } else {
+                    System.out.println();
+                }
+            } else {
+                System.out.println(command + ": command not found");
+            }
         }
 
         scanner.close();
