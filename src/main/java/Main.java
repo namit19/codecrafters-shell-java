@@ -38,17 +38,33 @@ public class Main {
             // Extract redirection targets (if any) and strip them from the token list
             String stdoutFile = null;
             String stderrFile = null;
+            boolean stdoutAppend = false;
+            boolean stderrAppend = false;
             List<String> cleanedTokens = new ArrayList<>();
             for (int i = 0; i < tokens.size(); i++) {
                 String t = tokens.get(i);
                 if (t.equals(">") || t.equals("1>")) {
                     if (i + 1 < tokens.size()) {
                         stdoutFile = tokens.get(i + 1);
+                        stdoutAppend = false;
+                        i++;
+                    }
+                } else if (t.equals(">>") || t.equals("1>>")) {
+                    if (i + 1 < tokens.size()) {
+                        stdoutFile = tokens.get(i + 1);
+                        stdoutAppend = true;
                         i++;
                     }
                 } else if (t.equals("2>")) {
                     if (i + 1 < tokens.size()) {
                         stderrFile = tokens.get(i + 1);
+                        stderrAppend = false;
+                        i++;
+                    }
+                } else if (t.equals("2>>")) {
+                    if (i + 1 < tokens.size()) {
+                        stderrFile = tokens.get(i + 1);
+                        stderrAppend = true;
                         i++;
                     }
                 } else {
@@ -69,12 +85,12 @@ public class Main {
             try {
                 if (stdoutFile != null) {
                     File f = resolveFile(stdoutFile);
-                    stdoutStream = new PrintStream(new FileOutputStream(f));
+                    stdoutStream = new PrintStream(new FileOutputStream(f, stdoutAppend));
                     System.setOut(stdoutStream);
                 }
                 if (stderrFile != null) {
                     File f = resolveFile(stderrFile);
-                    stderrStream = new PrintStream(new FileOutputStream(f));
+                    stderrStream = new PrintStream(new FileOutputStream(f, stderrAppend));
                     System.setErr(stderrStream);
                 }
             } catch (IOException e) {
@@ -101,7 +117,7 @@ public class Main {
                         System.exit(code);
                         break;
                     default:
-                        runExternalCommand(command, cleanedTokens, stdoutFile, stderrFile);
+                        runExternalCommand(command, cleanedTokens, stdoutFile, stdoutAppend, stderrFile, stderrAppend);
                 }
             } finally {
                 if (stdoutStream != null) {
@@ -128,7 +144,9 @@ public class Main {
         return f;
     }
 
-    private static void runExternalCommand(String command, List<String> tokens, String stdoutFile, String stderrFile) {
+    private static void runExternalCommand(String command, List<String> tokens,
+                                            String stdoutFile, boolean stdoutAppend,
+                                            String stderrFile, boolean stderrAppend) {
         File executable = findExecutable(command);
 
         if (executable == null) {
@@ -141,13 +159,23 @@ public class Main {
             pb.directory(new File(currentDir));
 
             if (stdoutFile != null) {
-                pb.redirectOutput(resolveFile(stdoutFile));
+                File f = resolveFile(stdoutFile);
+                if (stdoutAppend) {
+                    pb.redirectOutput(ProcessBuilder.Redirect.appendTo(f));
+                } else {
+                    pb.redirectOutput(f);
+                }
             } else {
                 pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
             }
 
             if (stderrFile != null) {
-                pb.redirectError(resolveFile(stderrFile));
+                File f = resolveFile(stderrFile);
+                if (stderrAppend) {
+                    pb.redirectError(ProcessBuilder.Redirect.appendTo(f));
+                } else {
+                    pb.redirectError(f);
+                }
             } else {
                 pb.redirectError(ProcessBuilder.Redirect.INHERIT);
             }
