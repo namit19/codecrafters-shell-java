@@ -7,10 +7,12 @@ import java.util.Scanner;
 
 public class Main {
 
+    // Simple tracking for background jobs (can be expanded if needed)
+    private static int nextJobNumber = 1;
+
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
 
-        // Standard REPL loop for a shell
         while (true) {
             System.out.print("$ ");
             if (!scanner.hasNextLine()) {
@@ -22,16 +24,14 @@ public class Main {
                 continue;
             }
 
-            // Exit command
             if (input.equals("exit")) {
                 break;
             }
 
-            // Check if the user input contains a pipeline operator
+            // Check for pipelines first
             if (input.contains("|")) {
                 PipelineHandler.executePipeline(input);
             } else {
-                // Handle regular single commands
                 executeSingleCommand(input);
             }
         }
@@ -40,22 +40,43 @@ public class Main {
 
     private static void executeSingleCommand(String input) {
         List<String> args = parseCommand(input);
+        if (args.isEmpty()) return;
+
+        // Check if this command should run in the background
+        boolean isBackground = false;
+        if (args.get(args.size() - 1).equals("&")) {
+            isBackground = true;
+            args.remove(args.size() - 1); // Strip the '&' token
+        }
+
         try {
             ProcessBuilder pb = new ProcessBuilder(args);
-            pb.inheritIO(); // Directly link to standard input/output/error
+            pb.inheritIO(); 
             Process p = pb.start();
-            p.waitFor();
+
+            if (isBackground) {
+                // Print the job number and system PID immediately
+                System.out.println("[" + nextJobNumber + "] " + p.pid());
+                
+                // Keep track or increment for recycling in future steps
+                // For now, we keep it simple to satisfy the prompt's condition
+                nextJobNumber++; 
+                
+                // Do NOT p.waitFor(). Return immediately to the prompt loop.
+            } else {
+                // Foreground task: wait for completion normally
+                p.waitFor();
+            }
         } catch (Exception e) {
-            System.out.println(args.get(0) +": command not found");
+            System.out.println(args.get(0) + ": command not found");
         }
     }
 
-    // Helper method to split command strings by spaces
     private static List<String> parseCommand(String command) {
         return new ArrayList<>(Arrays.asList(command.split("\\s+")));
     }
 
-    // Pipeline handler nested safely inside Main
+    // Pipeline Handler Nested Class
     public static class PipelineHandler {
         public static void executePipeline(String userInput) {
             String[] pipeParts = userInput.split("\\|");
@@ -68,18 +89,15 @@ public class Main {
             List<String> cmd2Args = parseCommand(pipeParts[1].trim());
 
             try {
-                // 1. Start the first process (e.g., tail -f)
                 ProcessBuilder pb1 = new ProcessBuilder(cmd1Args);
                 pb1.redirectError(ProcessBuilder.Redirect.INHERIT); 
                 Process p1 = pb1.start();
 
-                // 2. Start the second process (e.g., head -n 5)
                 ProcessBuilder pb2 = new ProcessBuilder(cmd2Args);
                 pb2.redirectError(ProcessBuilder.Redirect.INHERIT);
-                pb2.redirectOutput(ProcessBuilder.Redirect.INHERIT); // Output goes to terminal
+                pb2.redirectOutput(ProcessBuilder.Redirect.INHERIT); 
                 Process p2 = pb2.start();
 
-                // 3. Background thread to pump bytes from P1 to P2 continuously
                 Thread pipeThread = new Thread(() -> {
                     try (InputStream inputFromP1 = p1.getInputStream();
                          OutputStream outputToP2 = p2.getOutputStream()) {
@@ -88,22 +106,17 @@ public class Main {
                         int bytesRead;
                         while ((bytesRead = inputFromP1.read(buffer)) != -1) {
                             outputToP2.write(buffer, 0, bytesRead);
-                            outputToP2.flush(); // Forces data out instantly for real-time streams
+                            outputToP2.flush(); 
                         }
                     } catch (Exception e) {
-                        // Subside broken pipe exceptions (e.g., when 'head' stops reading early)
+                        // Suppress broken pipes
                     }
                 });
                 pipeThread.start();
 
-                // 4. Wait for P1 to exit or finish tracking
                 p1.waitFor();
-                
-                // 5. Cleanup streams after P1 completes
                 pipeThread.join(); 
                 p2.getOutputStream().close(); 
-
-                // 6. Wait for P2 to finish printing the final output
                 p2.waitFor();
 
             } catch (Exception e) {
