@@ -5,13 +5,47 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public class Main {
-    public static void main(String[] args) throws Exception {
-        BufferedReader reader = new BufferedReader(
-                new InputStreamReader(System.in));
 
-        Path currentDirectory = Paths.get(System.getProperty("user.dir"));
+    private static boolean isBuiltin(String cmd) {
+        return cmd.equals("echo")
+                || cmd.equals("exit")
+                || cmd.equals("type")
+                || cmd.equals("pwd")
+                || cmd.equals("cd");
+    }
+
+    private static Path findExecutable(String command) {
+        String pathEnv = System.getenv("PATH");
+
+        if (pathEnv == null) {
+            return null;
+        }
+
+        String[] dirs = pathEnv.split(":");
+
+        for (String dir : dirs) {
+            Path candidate = Paths.get(dir, command);
+
+            if (Files.exists(candidate)
+                    && Files.isRegularFile(candidate)
+                    && Files.isExecutable(candidate)) {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    public static void main(String[] args) throws Exception {
+
+        BufferedReader reader =
+                new BufferedReader(new InputStreamReader(System.in));
+
+        Path currentDirectory =
+                Paths.get(System.getProperty("user.dir"));
 
         while (true) {
+
             System.out.print("$ ");
             System.out.flush();
 
@@ -33,7 +67,7 @@ public class Main {
             switch (command) {
 
                 case "echo":
-                    if (parts.length > 1) {
+                    if (input.length() > 5) {
                         System.out.println(input.substring(5));
                     } else {
                         System.out.println();
@@ -43,24 +77,6 @@ public class Main {
                 case "exit":
                     if (parts.length > 1 && parts[1].equals("0")) {
                         return;
-                    }
-                    break;
-
-                case "type":
-                    if (parts.length < 2) {
-                        break;
-                    }
-
-                    String cmd = parts[1];
-
-                    if (cmd.equals("echo")
-                            || cmd.equals("exit")
-                            || cmd.equals("type")
-                            || cmd.equals("pwd")
-                            || cmd.equals("cd")) {
-                        System.out.println(cmd + " is a shell builtin");
-                    } else {
-                        System.out.println(cmd + ": not found");
                     }
                     break;
 
@@ -75,24 +91,69 @@ public class Main {
                         pathStr = System.getenv("HOME");
                     }
 
-                    Path targetPath = Paths.get(pathStr);
+                    Path target = Paths.get(pathStr);
 
-                    if (!targetPath.isAbsolute()) {
-                        targetPath = currentDirectory.resolve(targetPath);
+                    if (!target.isAbsolute()) {
+                        target = currentDirectory.resolve(target);
                     }
 
-                    targetPath = targetPath.normalize();
+                    target = target.normalize();
 
-                    if (Files.exists(targetPath) && Files.isDirectory(targetPath)) {
-                        currentDirectory = targetPath;
+                    if (Files.exists(target) && Files.isDirectory(target)) {
+                        currentDirectory = target;
                     } else {
                         System.out.println(
                                 "cd: " + pathStr + ": No such file or directory");
                     }
                     break;
 
+                case "type":
+                    if (parts.length < 2) {
+                        break;
+                    }
+
+                    String targetCmd = parts[1];
+
+                    if (isBuiltin(targetCmd)) {
+                        System.out.println(
+                                targetCmd + " is a shell builtin");
+                    } else {
+                        Path executable = findExecutable(targetCmd);
+
+                        if (executable != null) {
+                            System.out.println(
+                                    targetCmd + " is " + executable);
+                        } else {
+                            System.out.println(
+                                    targetCmd + ": not found");
+                        }
+                    }
+                    break;
+
                 default:
-                    System.out.println(command + ": command not found");
+                    Path executable = findExecutable(command);
+
+                    if (executable == null) {
+                        System.out.println(
+                                command + ": command not found");
+                        break;
+                    }
+
+                    try {
+                        ProcessBuilder pb =
+                                new ProcessBuilder(parts);
+
+                        pb.directory(currentDirectory.toFile());
+                        pb.inheritIO();
+
+                        Process process = pb.start();
+                        process.waitFor();
+
+                    } catch (Exception e) {
+                        System.out.println(
+                                command + ": command not found");
+                    }
+                    break;
             }
         }
     }
