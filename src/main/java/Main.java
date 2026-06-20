@@ -1,48 +1,120 @@
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
+import java.io.*;
 
 public class Main {
-    private static String currentDir = System.getProperty("user.dir");
-    private static final List<String> BUILTINS = Arrays.asList("echo", "exit", "type", "pwd", "cd");
-
-    public static void main(String[] args) throws IOException {
-        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
 
         while (true) {
-            System.out.print("$ ");
+            System.print("$ ");
             System.out.flush();
-            String input = reader.readLine();
 
-            if (input == null) {
+            if (!scanner.hasNextLine()) {
                 break;
             }
 
-            input = input.trim();
-            if (input.isEmpty()) {
+            String commandLine = scanner.nextLine();
+            if (commandLine.trim().isEmpty()) {
                 continue;
             }
 
-            List<String> tokens = parseInput(input);
-            String command = tokens.get(0);
-            List<String> commandArgs = tokens.subList(1, tokens.size());
+            List<String> parsedArgs = parseArguments(commandLine);
+            if (parsedArgs.isEmpty()) {
+                continue;
+            }
 
-            switch (command) {
-                case "echo":
-                    System.out.println(String.join(" ", commandArgs));
+            String command = parsedArgs.get(0);
+
+            // Handle built-in commands
+            if (command.equals("exit")) {
+                System.exit(0);
+            } else if (command.equals("echo")) {
+                // Print arguments separated by a single space
+                for (int i = 1; i < parsedArgs.size(); i++) {
+                    System.print(parsedArgs.get(i));
+                    if (i < parsedArgs.size() - 1) {
+                        System.print(" ");
+                    }
+                }
+                System.out.println();
+            } else {
+                // Handle external executables (like cat)
+                executeExternalCommand(parsedArgs);
+            }
+        }
+        scanner.close();
+    }
+
+    private static List<String> parseArguments(String commandLine) {
+        List<String> args = new ArrayList<>();
+        StringBuilder currentArg = new StringBuilder();
+        boolean inSingleQuotes = false;
+        boolean hasContent = false; // Ensures empty quotes '' are handled without discarding the argument context
+
+        for (int i = 0; i < commandLine.length(); i++) {
+            char ch = commandLine.charAt(i);
+
+            if (ch == '\'') {
+                // Toggle quote state
+                inSingleQuotes = !inSingleQuotes;
+                hasContent = true; 
+            } else if (inSingleQuotes) {
+                // Inside single quotes, everything is literal
+                currentArg.append(ch);
+            } else {
+                // Outside single quotes, whitespace acts as a delimiter
+                if (Character.isWhitespace(ch)) {
+                    if (currentArg.length() > 0 || hasContent) {
+                        args.add(currentArg.toString());
+                        currentArg.setLength(0); // Clear buffer
+                        hasContent = false;
+                    }
+                } else {
+                    currentArg.append(ch);
+                    hasContent = true;
+                }
+            }
+        }
+
+        // Add the final argument if remaining
+        if (currentArg.length() > 0 || hasContent) {
+            args.add(currentArg.toString());
+        }
+
+        return args;
+    }
+
+    private static void executeExternalCommand(List<String> args) {
+        String command = args.get(0);
+        
+        // Check if command exists in system PATH
+        String pathEnv = System.getenv("PATH");
+        boolean found = false;
+
+        if (pathEnv != null) {
+            String delimiter = System.getProperty("path.separator");
+            for (String path : pathEnv.split(delimiter)) {
+                File exe = new File(path, command);
+                if (exe.isFile() && exe.canExecute()) {
+                    found = true;
                     break;
-                case "pwd":
-                    System.out.println(currentDir);
-                    break;
-                case "cd":
-                    handleCd(commandArgs);
-                    break;
-                case "type":
-                    handleType(commandArgs);
-                    break;
-                case "exit":
-                    int code = commandArgs.isEmpty() ? 0 :
+                }
+            }
+        }
+
+        if (!found) {
+            System.out.println(command + ": command not found");
+            return;
+        }
+
+        try {
+            // ProcessBuilder passes arguments exactly as parsed, bypassing shell re-tokenization
+            ProcessBuilder pb = new ProcessBuilder(args);
+            pb.inheritIO(); // Routes stdout/stderr directly to the terminal
+            Process process = pb.start();
+            process.waitFor();
+        } catch (Exception e) {
+            System.out.println(command + ": error running command");
+        }
+    }
+}
