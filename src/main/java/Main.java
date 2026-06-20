@@ -9,19 +9,18 @@ import java.util.Scanner;
 public class Main {
 
     static class BackgroundJob {
-        int jobNumber;
+        int jobNo;
         Process process;
         String originalCommand;
 
-        BackgroundJob(int jobNumber, Process process, String originalCommand) {
-            this.jobNumber = jobNumber;
+        BackgroundJob(int jobNo, Process process, String originalCommand) {
+            this.jobNo = jobNo;
             this.process = process;
             this.originalCommand = originalCommand;
         }
     }
 
     private static final List<BackgroundJob> activeJobs = new ArrayList<>();
-    private static int nextJobNumber = 1;
 
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
@@ -44,7 +43,6 @@ public class Main {
                 break;
             }
 
-            // Handle pipelines first
             if (input.contains("|")) {
                 PipelineHandler.executePipeline(input);
             } else {
@@ -59,13 +57,27 @@ public class Main {
         while (iterator.hasNext()) {
             BackgroundJob job = iterator.next();
             if (!job.process.isAlive()) {
-                System.out.printf("[%d]+  Done                 %s%n", job.jobNumber, job.originalCommand);
+                System.out.printf("[%d]+  Done                 %s%n", job.jobNo, job.originalCommand);
                 iterator.remove();
-                
-                if (activeJobs.isEmpty()) {
-                    nextJobNumber = 1;
+            }
+        }
+    }
+
+    // Dynamic job allocation: finds the lowest available positive integer
+    private static int getNextJobNumber() {
+        int candidate = 1;
+        while (true) {
+            boolean isTaken = false;
+            for (BackgroundJob job : activeJobs) {
+                if (job.jobNo == candidate) {
+                    isTaken = true;
+                    break;
                 }
             }
+            if (!isTaken) {
+                return candidate;
+            }
+            candidate++;
         }
     }
 
@@ -73,11 +85,10 @@ public class Main {
         List<String> args = parseCommand(input);
         if (args.isEmpty()) return;
 
-        // Built-in 'jobs' command handling
         if (args.get(0).equals("jobs")) {
             for (BackgroundJob job : activeJobs) {
                 if (job.process.isAlive()) {
-                    System.out.printf("[%d]+  Running              %s &%n", job.jobNumber, job.originalCommand);
+                    System.out.printf("[%d]+  Running              %s &%n", job.jobNo, job.originalCommand);
                 }
             }
             return;
@@ -97,9 +108,9 @@ public class Main {
             Process p = pb.start();
 
             if (isBackground) {
-                System.out.println("[" + nextJobNumber + "] " + p.pid());
-                activeJobs.add(new BackgroundJob(nextJobNumber, p, commandString));
-                nextJobNumber++; 
+                int assignedJobNo = getNextJobNumber();
+                System.out.println("[" + assignedJobNo + "] " + p.pid());
+                activeJobs.add(new BackgroundJob(assignedJobNo, p, commandString));
             } else {
                 p.waitFor();
             }
