@@ -8,7 +8,6 @@ public class Main {
     private static String currentDir = System.getProperty("user.dir");
 
     // Background job tracking
-    private static int nextJobNumber = 1;
     private static final List<Job> jobs = new ArrayList<>();
 
     private static class Job {
@@ -216,11 +215,22 @@ public class Main {
 
             Process process = pb.start();
 
-            int javaJobNumber = nextJobNumber++;
-            long pid = process.pid();
-            jobs.add(new Job(javaJobNumber, pid, originalCommandLine, process));
+            // Dynamic Job Number Recycling Logic
+            int targetJobNumber = 1;
+            if (!jobs.isEmpty()) {
+                int currentMax = 0;
+                for (Job job : jobs) {
+                    if (job.number > currentMax) {
+                        currentMax = job.number;
+                    }
+                }
+                targetJobNumber = currentMax + 1;
+            }
 
-            System.out.println("[" + javaJobNumber + "] " + pid);
+            long pid = process.pid();
+            jobs.add(new Job(targetJobNumber, pid, originalCommandLine, process));
+
+            System.out.println("[" + targetJobNumber + "] " + pid);
         } catch (IOException e) {
             System.out.println(rawArgs[0] + ": command not found");
         }
