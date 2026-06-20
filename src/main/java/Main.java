@@ -2,13 +2,11 @@ import java.util.*;
 import java.io.*;
 
 public class Main {
-    // List of recognized shell built-in commands
     private static final Set<String> BUILTINS = new HashSet<>(Arrays.asList("exit", "echo", "type", "cd", "pwd"));
 
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
 
-        // Ensure user.dir is set to current directory if not already populated
         if (System.getProperty("user.dir") == null) {
             System.setProperty("user.dir", new File(".").getAbsolutePath());
         }
@@ -37,7 +35,6 @@ public class Main {
             if (command.equals("exit")) {
                 System.exit(0);
             } else if (command.equals("echo")) {
-                // Print arguments separated by a single space
                 for (int i = 1; i < parsedArgs.size(); i++) {
                     System.out.print(parsedArgs.get(i));
                     if (i < parsedArgs.size() - 1) {
@@ -50,10 +47,8 @@ public class Main {
             } else if (command.equals("cd")) {
                 handleCdCommand(parsedArgs);
             } else if (command.equals("pwd")) {
-                // The pwd built-in simply prints the current user.dir property
                 System.out.println(System.getProperty("user.dir"));
             } else {
-                // Handle external executables (like cat)
                 executeExternalCommand(parsedArgs);
             }
         }
@@ -63,18 +58,27 @@ public class Main {
     private static List<String> parseArguments(String commandLine) {
         List<String> args = new ArrayList<>();
         StringBuilder currentArg = new StringBuilder();
+        
         boolean inSingleQuotes = false;
+        boolean inDoubleQuotes = false;
         boolean hasContent = false; 
 
         for (int i = 0; i < commandLine.length(); i++) {
             char ch = commandLine.charAt(i);
 
-            if (ch == '\'') {
+            if (ch == '\'' && !inDoubleQuotes) {
+                // Toggle single quotes ONLY if we aren't inside double quotes
                 inSingleQuotes = !inSingleQuotes;
                 hasContent = true; 
-            } else if (inSingleQuotes) {
+            } else if (ch == '"' && !inSingleQuotes) {
+                // Toggle double quotes ONLY if we aren't inside single quotes
+                inDoubleQuotes = !inDoubleQuotes;
+                hasContent = true;
+            } else if (inSingleQuotes || inDoubleQuotes) {
+                // Inside any active quote block, treat everything literally
                 currentArg.append(ch);
             } else {
+                // Outside all quotes, handle spacing and delimiters
                 if (Character.isWhitespace(ch)) {
                     if (currentArg.length() > 0 || hasContent) {
                         args.add(currentArg.toString());
@@ -101,13 +105,11 @@ public class Main {
         }
         String targetCommand = args.get(1);
 
-        // Check if it's a built-in
         if (BUILTINS.contains(targetCommand)) {
             System.out.println(targetCommand + " is a shell builtin");
             return;
         }
 
-        // Check if it's an external executable in the PATH
         String pathEnv = System.getenv("PATH");
         if (pathEnv != null) {
             String delimiter = System.getProperty("path.separator");
@@ -126,7 +128,6 @@ public class Main {
     private static void handleCdCommand(List<String> args) {
         String targetPath;
 
-        // If no argument or explicitly "~", default to the HOME directory
         if (args.size() < 2 || args.get(1).equals("~")) {
             targetPath = System.getenv("HOME");
             if (targetPath == null) {
@@ -136,16 +137,13 @@ public class Main {
             targetPath = args.get(1);
         }
 
-        // Resolve absolute vs relative path safely
         File directory = new File(targetPath);
         if (!directory.isAbsolute()) {
             directory = new File(System.getProperty("user.dir"), targetPath);
         }
 
-        // Verify if directory exists and update state
         if (directory.exists() && directory.isDirectory()) {
             try {
-                // canonical path cleans up inner elements like "." and ".."
                 System.setProperty("user.dir", directory.getCanonicalPath());
             } catch (IOException e) {
                 System.setProperty("user.dir", directory.getAbsolutePath());
@@ -178,7 +176,6 @@ public class Main {
 
         try {
             ProcessBuilder pb = new ProcessBuilder(args);
-            // Ensure the executed process uses our shell's current working directory
             pb.directory(new File(System.getProperty("user.dir"))); 
             pb.inheritIO(); 
             Process process = pb.start();
