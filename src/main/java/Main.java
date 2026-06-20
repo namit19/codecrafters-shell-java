@@ -25,12 +25,14 @@ public class Main {
                 break;
             }
 
-            input = input.trim();
-            if (input.isEmpty()) {
+            if (input.trim().isEmpty()) {
                 continue;
             }
 
             List<String> tokens = parseInput(input);
+            if (tokens.isEmpty()) {
+                continue;
+            }
 
             // Extract redirection target (if any) and strip it from the token list
             String redirectFile = null;
@@ -40,7 +42,7 @@ public class Main {
                 if (t.equals(">") || t.equals("1>")) {
                     if (i + 1 < tokens.size()) {
                         redirectFile = tokens.get(i + 1);
-                        i++; // skip the filename token too
+                        i++;
                     }
                 } else {
                     cleanedTokens.add(t);
@@ -119,8 +121,8 @@ public class Main {
                 if (!f.isAbsolute()) {
                     f = new File(currentDir, redirectFile);
                 }
-                pb.redirectOutput(f); // stdout -> file
-                pb.redirectError(ProcessBuilder.Redirect.INHERIT); // stderr -> terminal
+                pb.redirectOutput(f);
+                pb.redirectError(ProcessBuilder.Redirect.INHERIT);
                 pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
             } else {
                 pb.inheritIO();
@@ -213,13 +215,86 @@ public class Main {
         }
     }
 
+    // Quote-aware tokenizer: handles single quotes, double quotes, and backslash escapes
     private static List<String> parseInput(String input) {
         List<String> tokens = new ArrayList<>();
-        for (String part : input.split("\\s+")) {
-            if (!part.isEmpty()) {
-                tokens.add(part);
+        StringBuilder current = new StringBuilder();
+        boolean inSingleQuotes = false;
+        boolean inDoubleQuotes = false;
+        boolean hasToken = false;
+
+        int i = 0;
+        int len = input.length();
+
+        while (i < len) {
+            char c = input.charAt(i);
+
+            if (inSingleQuotes) {
+                if (c == '\'') {
+                    inSingleQuotes = false;
+                } else {
+                    current.append(c);
+                }
+                i++;
+                continue;
             }
+
+            if (inDoubleQuotes) {
+                if (c == '"') {
+                    inDoubleQuotes = false;
+                } else if (c == '\\' && i + 1 < len &&
+                        (input.charAt(i + 1) == '"' || input.charAt(i + 1) == '\\' ||
+                         input.charAt(i + 1) == '$' || input.charAt(i + 1) == '`')) {
+                    current.append(input.charAt(i + 1));
+                    i++;
+                } else {
+                    current.append(c);
+                }
+                i++;
+                continue;
+            }
+
+            // Not inside any quotes
+            if (c == '\'') {
+                inSingleQuotes = true;
+                hasToken = true;
+                i++;
+                continue;
+            }
+
+            if (c == '"') {
+                inDoubleQuotes = true;
+                hasToken = true;
+                i++;
+                continue;
+            }
+
+            if (c == '\\' && i + 1 < len) {
+                current.append(input.charAt(i + 1));
+                hasToken = true;
+                i += 2;
+                continue;
+            }
+
+            if (Character.isWhitespace(c)) {
+                if (hasToken) {
+                    tokens.add(current.toString());
+                    current.setLength(0);
+                    hasToken = false;
+                }
+                i++;
+                continue;
+            }
+
+            current.append(c);
+            hasToken = true;
+            i++;
         }
+
+        if (hasToken) {
+            tokens.add(current.toString());
+        }
+
         return tokens;
     }
 }
