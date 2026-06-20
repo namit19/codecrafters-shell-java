@@ -1,6 +1,5 @@
 import java.io.*;
 import java.util.*;
-import java.util.concurrent.*;
 
 public class Main {
 
@@ -12,6 +11,8 @@ public class Main {
         int number;
         long pid;
         String commandLine;
+        volatile boolean finished = false;
+
         Job(int number, long pid, String commandLine) {
             this.number = number;
             this.pid = pid;
@@ -22,6 +23,10 @@ public class Main {
     public static void main(String[] args) throws Exception {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
         while (true) {
+            // Report any background jobs that finished since the last prompt,
+            // BEFORE printing the new prompt (matches bash's notification timing).
+            reportFinishedJobs();
+
             System.out.print("$ ");
             String line = reader.readLine();
             if (line == null) break;
@@ -35,10 +40,13 @@ public class Main {
             boolean background = false;
             if (!tokens.isEmpty() && tokens.get(tokens.size() - 1).equals("&")) {
                 background = true;
-                tokens = tokens.subList(0, tokens.size() - 1);
+                tokens = new ArrayList<>(tokens.subList(0, tokens.size() - 1));
             }
 
             if (tokens.isEmpty()) continue;
+
+            // Reconstruct the display command line (without trailing "&") for job notifications
+            String displayCommand = String.join(" ", tokens);
 
             // Split tokens into pipeline stages on "|"
             List<List<String>> stages = new ArrayList<>();
@@ -55,7 +63,7 @@ public class Main {
 
             try {
                 if (background) {
-                    runBackground(stages, line);
+                    runBackground(stages, displayCommand);
                 } else if (stages.size() == 1) {
                     runSingleCommand(stages.get(0));
                 } else {
@@ -214,10 +222,6 @@ public class Main {
         }
     }
 
-    // Builds the ProcessBuilder list and starts the pipeline.
-    // If foreground is true, ends are connected to the shell's own stdin/stdout.
-    // If foreground is false (background job), stdin is set to /dev/null so it
-    // doesn't compete with the shell's own input reading.
     private static List<Process> startPipelineProcesses(List<List<String>> stages, boolean foreground) throws Exception {
         List<ProcessBuilder> builders = new ArrayList<>();
         for (List<String> stage : stages) {
@@ -242,22 +246,21 @@ public class Main {
     }
 
     // ---------- Background job execution ----------
-    private static void runBackground(List<List<String>> stages, String originalLine) throws Exception {
+    private static void runBackground(List<List<String>> stages, String displayCommand) throws Exception {
         List<Process> processes = startPipelineProcesses(stages, false);
         Process lastProcess = processes.get(processes.size() - 1);
         long pid = lastProcess.pid();
 
         int jobNumber;
+        Job job;
         synchronized (jobsLock) {
             jobNumber = nextAvailableJobNumber();
-            jobs.put(jobNumber, new Job(jobNumber, pid, originalLine));
+            job = new Job(jobNumber, pid, displayCommand);
+            jobs.put(jobNumber, job);
         }
 
         System.out.println("[" + jobNumber + "] " + pid);
 
-        // Reap the job(s) in the background so the number is freed (recycled)
-        // for reuse, and so we don't leave zombie processes.
-        final int finalJobNumber = jobNumber;
         Thread reaper = new Thread(() -> {
             try {
                 for (Process p : processes) {
@@ -265,9 +268,7 @@ public class Main {
                 }
             } catch (InterruptedException ignored) {
             } finally {
-                synchronized (jobsLock) {
-                    jobs.remove(finalJobNumber);
-                }
+                job.finished = true; // main loop reports + recycles this number
             }
         });
         reaper.setDaemon(true);
@@ -275,8 +276,6 @@ public class Main {
     }
 
     // Finds the smallest positive integer not currently assigned to an active job.
-    // This is what makes job numbers "recycle": once job [1] finishes and is
-    // reaped, the next backgrounded command reuses 1 instead of continuing to 2, 3, ...
     private static int nextAvailableJobNumber() {
         int n = 1;
         while (jobs.containsKey(n)) {
@@ -285,10 +284,39 @@ public class Main {
         return n;
     }
 
+    // Prints "[N]+  Done                 <command>" for any finished jobs,
+    // then removes them so the number can be recycled by a future job.
+    private static void reportFinishedJobs() {
+        List<Job> done = new ArrayList<>();
+        synchronized (jobsLock) {
+            Iterator<Map.Entry<Integer, Job>> it = jobs.entrySet().iterator();
+            while (it.hasNext()) {
+                Job j = it.next().getValue();
+                if (j.finished) {
+                    done.add(j);
+                    it.remove();
+                }
+            }
+        }
+        for (Job j : done) {
+            System.out.println(formatStatusLine(j, "Done"));
+        }
+    }
+
+    private static String formatStatusLine(Job job, String status) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("[").append(job.number).append("]+  ");
+        sb.append(status);
+        int pad = 21 - status.length();
+        for (int i = 0; i < pad; i++) sb.append(' ');
+        sb.append(job.commandLine);
+        return sb.toString();
+    }
+
     private static void printJobs() {
         synchronized (jobsLock) {
             for (Job j : jobs.values()) {
-                System.out.println("[" + j.number + "] " + j.pid + "  " + j.commandLine);
+                System.out.println("[" + j.number + "]  " + j.pid + "  " + j.commandLine);
             }
         }
     }
