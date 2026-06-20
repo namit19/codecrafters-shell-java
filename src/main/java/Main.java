@@ -8,7 +8,6 @@ import java.util.Scanner;
 
 public class Main {
 
-    // Structure to keep track of running background jobs
     static class BackgroundJob {
         int jobNumber;
         Process process;
@@ -28,7 +27,7 @@ public class Main {
         Scanner scanner = new Scanner(System.in);
 
         while (true) {
-            // 1. CRITICAL: Check and notify finished background jobs BEFORE displaying the prompt
+            // Check and notify finished background jobs BEFORE displaying the prompt
             checkCompletedJobs();
 
             System.out.print("$ ");
@@ -45,6 +44,7 @@ public class Main {
                 break;
             }
 
+            // Handle pipelines first
             if (input.contains("|")) {
                 PipelineHandler.executePipeline(input);
             } else {
@@ -58,13 +58,10 @@ public class Main {
         Iterator<BackgroundJob> iterator = activeJobs.iterator();
         while (iterator.hasNext()) {
             BackgroundJob job = iterator.next();
-            // If the process is no longer active, it completed!
             if (!job.process.isAlive()) {
-                // Formatting matches exactly: "[1]+  Done                 <command>"
                 System.out.printf("[%d]+  Done                 %s%n", job.jobNumber, job.originalCommand);
                 iterator.remove();
                 
-                // If there are no more active background jobs, reset the counter to 1
                 if (activeJobs.isEmpty()) {
                     nextJobNumber = 1;
                 }
@@ -76,13 +73,22 @@ public class Main {
         List<String> args = parseCommand(input);
         if (args.isEmpty()) return;
 
+        // Built-in 'jobs' command handling
+        if (args.get(0).equals("jobs")) {
+            for (BackgroundJob job : activeJobs) {
+                if (job.process.isAlive()) {
+                    System.out.printf("[%d]+  Running              %s &%n", job.jobNumber, job.originalCommand);
+                }
+            }
+            return;
+        }
+
         boolean isBackground = false;
         if (args.get(args.size() - 1).equals("&")) {
             isBackground = true;
-            args.remove(args.size() - 1); // Strip the '&' token
+            args.remove(args.size() - 1); 
         }
 
-        // Reconstruct the clean command string for printing later
         String commandString = String.join(" ", args);
 
         try {
@@ -91,14 +97,10 @@ public class Main {
             Process p = pb.start();
 
             if (isBackground) {
-                // Print immediate status tracking info
                 System.out.println("[" + nextJobNumber + "] " + p.pid());
-                
-                // Add to our active list to monitor completion
                 activeJobs.add(new BackgroundJob(nextJobNumber, p, commandString));
                 nextJobNumber++; 
             } else {
-                // Foreground task block
                 p.waitFor();
             }
         } catch (Exception e) {
