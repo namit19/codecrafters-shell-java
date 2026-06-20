@@ -9,6 +9,24 @@ public class Main {
     // cannot truly chdir(); we resolve all relative paths against this.
     private static String currentDir = System.getProperty("user.dir");
 
+    // Background job tracking
+    private static int nextJobNumber = 1;
+    private static final List<Job> jobs = new ArrayList<>();
+
+    private static class Job {
+        int number;
+        long pid;
+        String command;
+        Process process;
+
+        Job(int number, long pid, String command, Process process) {
+            this.number = number;
+            this.pid = pid;
+            this.command = command;
+            this.process = process;
+        }
+    }
+
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
 
@@ -23,9 +41,29 @@ public class Main {
             List<String> tokens = parseArguments(input);
             if (tokens.isEmpty()) continue;
 
+            // Check for trailing "&" -> run in background
+            boolean background = false;
+            if (!tokens.isEmpty() && tokens.get(tokens.size() - 1).equals("&")) {
+                background = true;
+                tokens.remove(tokens.size() - 1);
+                if (tokens.isEmpty()) continue;
+            }
+
             String command = tokens.get(0);
             // Convert to array for compatibility with the rest of your architecture
             String[] parts = tokens.toArray(new String[0]);
+
+            if (background) {
+                // Builtins generally aren't meaningfully backgrounded in this shell,
+                // but we still honor "&" for external commands as required by this stage.
+                String executablePath = findInPath(command);
+                if (executablePath != null) {
+                    runInBackground(parts, input);
+                } else {
+                    System.out.println(command + ": command not found");
+                }
+                continue;
+            }
 
             switch (command) {
                 case "exit":
@@ -50,8 +88,8 @@ public class Main {
                     break;
 
                 case "jobs":
-                    // Stage requirement: empty implementation.
-                    // No background jobs tracked yet, so produce no output.
+                    // Stage requirement (background-jobs intro): empty implementation.
+                    // Listing jobs is handled in a later stage.
                     break;
 
                 case "cd":
@@ -73,6 +111,73 @@ public class Main {
             }
         }
         scanner.close();
+    }
+
+    // Starts a command in the background: doesn't wait for it to finish,
+    // prints "[jobNumber] pid", and returns immediately to the prompt.
+    private static void runInBackground(String[] rawArgs, String originalCommandLine) {
+        List<String> commandArgs = new ArrayList<>();
+        String redirectFile = null;
+        boolean appendMode = false;
+        boolean redirectStdout = false;
+        boolean redirectStderr = false;
+
+        for (int i = 0; i < rawArgs.length; i++) {
+            String arg = rawArgs[i];
+            if (arg.equals(">") || arg.equals("1>")) {
+                redirectStdout = true;
+                appendMode = false;
+                if (i + 1 < rawArgs.length) redirectFile = rawArgs[++i];
+            } else if (arg.equals(">>") || arg.equals("1>>")) {
+                redirectStdout = true;
+                appendMode = true;
+                if (i + 1 < rawArgs.length) redirectFile = rawArgs[++i];
+            } else if (arg.equals("2>")) {
+                redirectStderr = true;
+                appendMode = false;
+                if (i + 1 < rawArgs.length) redirectFile = rawArgs[++i];
+            } else if (arg.equals("2>>")) {
+                redirectStderr = true;
+                appendMode = true;
+                if (i + 1 < rawArgs.length) redirectFile = rawArgs[++i];
+            } else {
+                commandArgs.add(arg);
+            }
+        }
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder(commandArgs);
+            pb.directory(new File(currentDir));
+
+            if (redirectFile != null) {
+                File targetFile = resolvePath(redirectFile);
+                File parentDir = targetFile.getParentFile();
+                if (parentDir != null && !parentDir.exists()) {
+                    parentDir.mkdirs();
+                }
+
+                if (redirectStdout) {
+                    pb.redirectOutput(appendMode ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
+                    pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                } else if (redirectStderr) {
+                    pb.redirectError(appendMode ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
+                    pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                }
+            } else {
+                pb.inheritIO();
+            }
+
+            // Start the process but do NOT wait for it - that's what makes it "background".
+            Process process = pb.start();
+
+            int jobNumber = nextJobNumber++;
+            long pid = process.pid();
+            jobs.add(new Job(jobNumber, pid, originalCommandLine, process));
+
+            System.out.println("[" + jobNumber + "] " + pid);
+        } catch (IOException e) {
+            System.out.println(rawArgs[0] + ": command not found");
+        }
     }
 
     private static void handleCd(String[] parts) {
