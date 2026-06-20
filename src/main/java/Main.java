@@ -1,8 +1,24 @@
 import java.io.*;
-import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.*;
 
 public class Main {
+
+    // ---------- Job control state ----------
+    private static final Map<Integer, Job> jobs = new TreeMap<>();
+    private static final Object jobsLock = new Object();
+
+    private static class Job {
+        int number;
+        long pid;
+        String commandLine;
+        Job(int number, long pid, String commandLine) {
+            this.number = number;
+            this.pid = pid;
+            this.commandLine = commandLine;
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
         while (true) {
@@ -13,6 +29,15 @@ public class Main {
             if (line.isEmpty()) continue;
 
             List<String> tokens = tokenize(line);
+            if (tokens.isEmpty()) continue;
+
+            // Detect trailing "&" -> background execution
+            boolean background = false;
+            if (!tokens.isEmpty() && tokens.get(tokens.size() - 1).equals("&")) {
+                background = true;
+                tokens = tokens.subList(0, tokens.size() - 1);
+            }
+
             if (tokens.isEmpty()) continue;
 
             // Split tokens into pipeline stages on "|"
@@ -29,7 +54,9 @@ public class Main {
             stages.add(current);
 
             try {
-                if (stages.size() == 1) {
+                if (background) {
+                    runBackground(stages, line);
+                } else if (stages.size() == 1) {
                     runSingleCommand(stages.get(0));
                 } else {
                     runPipeline(stages);
@@ -85,6 +112,13 @@ public class Main {
                     tokenStarted = false;
                 }
                 tokens.add("|");
+            } else if (c == '&') {
+                if (tokenStarted) {
+                    tokens.add(cur.toString());
+                    cur.setLength(0);
+                    tokenStarted = false;
+                }
+                tokens.add("&");
             } else if (Character.isWhitespace(c)) {
                 if (tokenStarted) {
                     tokens.add(cur.toString());
@@ -130,7 +164,7 @@ public class Main {
             case "type":
                 if (!cmdArgs.isEmpty()) {
                     String name = cmdArgs.get(0);
-                    if (Arrays.asList("exit", "echo", "pwd", "cd", "type").contains(name)) {
+                    if (Arrays.asList("exit", "echo", "pwd", "cd", "type", "jobs").contains(name)) {
                         System.out.println(name + " is a shell builtin");
                     } else {
                         String path = findExecutable(name);
@@ -138,6 +172,9 @@ public class Main {
                         else System.out.println(name + ": not found");
                     }
                 }
+                return;
+            case "jobs":
+                printJobs();
                 return;
             default:
                 runExternal(tokens);
@@ -169,8 +206,19 @@ public class Main {
         return null;
     }
 
-    // ---------- Pipeline of 2+ external commands ----------
+    // ---------- Pipeline of 2+ external commands (foreground) ----------
     private static void runPipeline(List<List<String>> stages) throws Exception {
+        List<Process> processes = startPipelineProcesses(stages, true);
+        for (Process p : processes) {
+            p.waitFor();
+        }
+    }
+
+    // Builds the ProcessBuilder list and starts the pipeline.
+    // If foreground is true, ends are connected to the shell's own stdin/stdout.
+    // If foreground is false (background job), stdin is set to /dev/null so it
+    // doesn't compete with the shell's own input reading.
+    private static List<Process> startPipelineProcesses(List<List<String>> stages, boolean foreground) throws Exception {
         List<ProcessBuilder> builders = new ArrayList<>();
         for (List<String> stage : stages) {
             ProcessBuilder pb = new ProcessBuilder(stage);
@@ -179,13 +227,69 @@ public class Main {
             builders.add(pb);
         }
 
-        builders.get(0).redirectInput(ProcessBuilder.Redirect.INHERIT);
+        if (foreground) {
+            builders.get(0).redirectInput(ProcessBuilder.Redirect.INHERIT);
+        } else {
+            builders.get(0).redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null")));
+        }
         builders.get(builders.size() - 1).redirectOutput(ProcessBuilder.Redirect.INHERIT);
 
-        List<Process> processes = ProcessBuilder.startPipeline(builders);
+        if (builders.size() == 1) {
+            Process p = builders.get(0).start();
+            return Collections.singletonList(p);
+        }
+        return ProcessBuilder.startPipeline(builders);
+    }
 
-        for (Process p : processes) {
-            p.waitFor();
+    // ---------- Background job execution ----------
+    private static void runBackground(List<List<String>> stages, String originalLine) throws Exception {
+        List<Process> processes = startPipelineProcesses(stages, false);
+        Process lastProcess = processes.get(processes.size() - 1);
+        long pid = lastProcess.pid();
+
+        int jobNumber;
+        synchronized (jobsLock) {
+            jobNumber = nextAvailableJobNumber();
+            jobs.put(jobNumber, new Job(jobNumber, pid, originalLine));
+        }
+
+        System.out.println("[" + jobNumber + "] " + pid);
+
+        // Reap the job(s) in the background so the number is freed (recycled)
+        // for reuse, and so we don't leave zombie processes.
+        final int finalJobNumber = jobNumber;
+        Thread reaper = new Thread(() -> {
+            try {
+                for (Process p : processes) {
+                    p.waitFor();
+                }
+            } catch (InterruptedException ignored) {
+            } finally {
+                synchronized (jobsLock) {
+                    jobs.remove(finalJobNumber);
+                }
+            }
+        });
+        reaper.setDaemon(true);
+        reaper.start();
+    }
+
+    // Finds the smallest positive integer not currently assigned to an active job.
+    // This is what makes job numbers "recycle": once job [1] finishes and is
+    // reaped, the next backgrounded command reuses 1 instead of continuing to 2, 3, ...
+    private static int nextAvailableJobNumber() {
+        int n = 1;
+        while (jobs.containsKey(n)) {
+            n++;
+        }
+        return n;
+    }
+
+    private static void printJobs() {
+        synchronized (jobsLock) {
+            for (Job j : jobs.values()) {
+                System.out.println("[" + j.number + "] " + j.pid + "  " + j.commandLine);
+            }
         }
     }
 }
