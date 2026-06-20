@@ -16,6 +16,7 @@ public class Main {
             System.out.flush();
 
             String input = reader.readLine();
+
             if (input == null) {
                 break;
             }
@@ -30,9 +31,36 @@ public class Main {
             String command = parts[0];
 
             switch (command) {
+
+                case "echo":
+                    if (parts.length > 1) {
+                        System.out.println(input.substring(5));
+                    } else {
+                        System.out.println();
+                    }
+                    break;
+
                 case "exit":
                     if (parts.length > 1 && parts[1].equals("0")) {
                         return;
+                    }
+                    break;
+
+                case "type":
+                    if (parts.length < 2) {
+                        break;
+                    }
+
+                    String cmd = parts[1];
+
+                    if (cmd.equals("echo")
+                            || cmd.equals("exit")
+                            || cmd.equals("type")
+                            || cmd.equals("pwd")
+                            || cmd.equals("cd")) {
+                        System.out.println(cmd + " is a shell builtin");
+                    } else {
+                        System.out.println(cmd + ": not found");
                     }
                     break;
 
