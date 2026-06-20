@@ -13,20 +13,12 @@ public class Main {
                 break;
             }
 
-            String[] parts = input.split(" ", 2);
-            String command = parts[0];
-
-            if (command.equals("echo")) {
-                if (parts.length > 1) {
-                    System.out.println(parts[1]);
-                } else {
-                    System.out.println();
-                }
+            if (input.startsWith("echo ")) {
+                System.out.println(input.substring(5));
             } else {
+                String command = input.split(" ")[0];
                 System.out.println(command + ": command not found");
             }
         }
-
-        scanner.close();
     }
 }
