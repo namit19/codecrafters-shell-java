@@ -85,13 +85,27 @@ public class Main {
                     break;
 
                 case "jobs":
-                    // Format required: [1]+  Running                 sleep 10 &
-                    // "Running" padded to 24 characters total, preceded by two spaces after '+'
+                    // Gather all currently active running background jobs
+                    List<Job> activeJobs = new ArrayList<>();
                     for (Job job : jobs) {
                         if (job.process.isAlive()) {
-                            String statusField = String.format("%-24s", "Running");
-                            System.out.println("[" + job.number + "]+  " + statusField + job.command);
+                            activeJobs.add(job);
                         }
+                    }
+
+                    // Loop through active jobs to assign the correct + or - markers
+                    for (int i = 0; i < activeJobs.size(); i++) {
+                        Job job = activeJobs.get(i);
+                        char marker = ' '; // Default marker for older jobs
+
+                        if (i == activeJobs.size() - 1) {
+                            marker = '+'; // Most recently started job
+                        } else if (i == activeJobs.size() - 2) {
+                            marker = '-'; // Second most recently started job
+                        }
+
+                        String statusField = String.format("%-24s", "Running");
+                        System.out.println("[" + job.number + "]" + marker + "  " + statusField + job.command);
                     }
                     break;
 
