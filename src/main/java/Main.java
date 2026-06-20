@@ -2,18 +2,35 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Scanner;
 
 public class Main {
 
-    // Simple tracking for background jobs (can be expanded if needed)
+    // Structure to keep track of running background jobs
+    static class BackgroundJob {
+        int jobNumber;
+        Process process;
+        String originalCommand;
+
+        BackgroundJob(int jobNumber, Process process, String originalCommand) {
+            this.jobNumber = jobNumber;
+            this.process = process;
+            this.originalCommand = originalCommand;
+        }
+    }
+
+    private static final List<BackgroundJob> activeJobs = new ArrayList<>();
     private static int nextJobNumber = 1;
 
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
 
         while (true) {
+            // 1. CRITICAL: Check and notify finished background jobs BEFORE displaying the prompt
+            checkCompletedJobs();
+
             System.out.print("$ ");
             if (!scanner.hasNextLine()) {
                 break;
@@ -28,7 +45,6 @@ public class Main {
                 break;
             }
 
-            // Check for pipelines first
             if (input.contains("|")) {
                 PipelineHandler.executePipeline(input);
             } else {
@@ -38,16 +54,36 @@ public class Main {
         scanner.close();
     }
 
+    private static void checkCompletedJobs() {
+        Iterator<BackgroundJob> iterator = activeJobs.iterator();
+        while (iterator.hasNext()) {
+            BackgroundJob job = iterator.next();
+            // If the process is no longer active, it completed!
+            if (!job.process.isAlive()) {
+                // Formatting matches exactly: "[1]+  Done                 <command>"
+                System.out.printf("[%d]+  Done                 %s%n", job.jobNumber, job.originalCommand);
+                iterator.remove();
+                
+                // If there are no more active background jobs, reset the counter to 1
+                if (activeJobs.isEmpty()) {
+                    nextJobNumber = 1;
+                }
+            }
+        }
+    }
+
     private static void executeSingleCommand(String input) {
         List<String> args = parseCommand(input);
         if (args.isEmpty()) return;
 
-        // Check if this command should run in the background
         boolean isBackground = false;
         if (args.get(args.size() - 1).equals("&")) {
             isBackground = true;
             args.remove(args.size() - 1); // Strip the '&' token
         }
+
+        // Reconstruct the clean command string for printing later
+        String commandString = String.join(" ", args);
 
         try {
             ProcessBuilder pb = new ProcessBuilder(args);
@@ -55,16 +91,14 @@ public class Main {
             Process p = pb.start();
 
             if (isBackground) {
-                // Print the job number and system PID immediately
+                // Print immediate status tracking info
                 System.out.println("[" + nextJobNumber + "] " + p.pid());
                 
-                // Keep track or increment for recycling in future steps
-                // For now, we keep it simple to satisfy the prompt's condition
+                // Add to our active list to monitor completion
+                activeJobs.add(new BackgroundJob(nextJobNumber, p, commandString));
                 nextJobNumber++; 
-                
-                // Do NOT p.waitFor(). Return immediately to the prompt loop.
             } else {
-                // Foreground task: wait for completion normally
+                // Foreground task block
                 p.waitFor();
             }
         } catch (Exception e) {
