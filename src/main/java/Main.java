@@ -85,7 +85,7 @@ public class Main {
                     break;
 
                 case "jobs":
-                    // Gather all currently active running background jobs
+                    // Separate active running jobs to properly assign + and - markers
                     List<Job> activeJobs = new ArrayList<>();
                     for (Job job : jobs) {
                         if (job.process.isAlive()) {
@@ -93,20 +93,46 @@ public class Main {
                         }
                     }
 
-                    // Loop through active jobs to assign the correct + or - markers
-                    for (int i = 0; i < activeJobs.size(); i++) {
-                        Job job = activeJobs.get(i);
-                        char marker = ' '; // Default marker for older jobs
+                    List<Job> reapedJobs = new ArrayList<>();
 
-                        if (i == activeJobs.size() - 1) {
-                            marker = '+'; // Most recently started job
-                        } else if (i == activeJobs.size() - 2) {
-                            marker = '-'; // Second most recently started job
+                    // Display all jobs currently in our table
+                    for (int i = 0; i < jobs.size(); i++) {
+                        Job job = jobs.get(i);
+                        char marker = ' ';
+
+                        if (job.process.isAlive()) {
+                            // Assign + or - based on its position within active running jobs
+                            int activeIdx = activeJobs.indexOf(job);
+                            if (activeIdx == activeJobs.size() - 1) {
+                                marker = '+';
+                            } else if (activeIdx == activeJobs.size() - 2) {
+                                marker = '-';
+                            }
+
+                            String statusField = String.format("%-24s", "Running");
+                            System.out.println("[" + job.number + "]" + marker + "  " + statusField + job.command);
+                        } else {
+                            // If there is only one job total or this is the last one checked, give it '+'
+                            if (jobs.size() == 1 || i == jobs.size() - 1) {
+                                marker = '+';
+                            }
+
+                            String statusField = String.format("%-24s", "Done");
+                            // Strip any trailing Ampersand logic for 'Done' commands
+                            String cleanCommand = job.command;
+                            if (cleanCommand.endsWith(" &")) {
+                                cleanCommand = cleanCommand.substring(0, cleanCommand.length() - 2);
+                            } else if (cleanCommand.endsWith("&")) {
+                                cleanCommand = cleanCommand.substring(0, cleanCommand.length() - 1);
+                            }
+
+                            System.out.println("[" + job.number + "]" + marker + "  " + statusField + cleanCommand);
+                            reapedJobs.add(job); // Mark for deletion from our tracking collection
                         }
-
-                        String statusField = String.format("%-24s", "Running");
-                        System.out.println("[" + job.number + "]" + marker + "  " + statusField + job.command);
                     }
+
+                    // Remove reaped jobs from the active job table so they don't show up again
+                    jobs.removeAll(reapedJobs);
                     break;
 
                 case "cd":
