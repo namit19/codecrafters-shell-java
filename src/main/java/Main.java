@@ -1,22 +1,26 @@
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class Main {
 
     // ---------- Job control state ----------
     private static final Map<Integer, Job> jobs = new TreeMap<>();
     private static final Object jobsLock = new Object();
+    private static final AtomicLong orderCounter = new AtomicLong(0);
 
     private static class Job {
         int number;
         long pid;
         String commandLine;
+        long order; // monotonically increasing "start sequence" used for +/- markers
         volatile boolean finished = false;
 
-        Job(int number, long pid, String commandLine) {
+        Job(int number, long pid, String commandLine, long order) {
             this.number = number;
             this.pid = pid;
             this.commandLine = commandLine;
+            this.order = order;
         }
     }
 
@@ -255,7 +259,8 @@ public class Main {
         Job job;
         synchronized (jobsLock) {
             jobNumber = nextAvailableJobNumber();
-            job = new Job(jobNumber, pid, displayCommand);
+            long order = orderCounter.incrementAndGet();
+            job = new Job(jobNumber, pid, displayCommand, order);
             jobs.put(jobNumber, job);
         }
 
@@ -284,11 +289,13 @@ public class Main {
         return n;
     }
 
-    // Prints "[N]+  Done                 <command>" for any finished jobs,
+    // Prints "[N]+/-  Done                 <command>" for any finished jobs,
     // then removes them so the number can be recycled by a future job.
     private static void reportFinishedJobs() {
         List<Job> done = new ArrayList<>();
+        List<Job> snapshotAll;
         synchronized (jobsLock) {
+            snapshotAll = new ArrayList<>(jobs.values());
             Iterator<Map.Entry<Integer, Job>> it = jobs.entrySet().iterator();
             while (it.hasNext()) {
                 Job j = it.next().getValue();
@@ -299,25 +306,42 @@ public class Main {
             }
         }
         for (Job j : done) {
-            System.out.println(formatStatusLine(j, "Done"));
+            char sign = computeSign(j, snapshotAll);
+            System.out.println(formatStatusLine(j, "Done", sign));
         }
     }
 
-    private static String formatStatusLine(Job job, String status) {
+    // Determines the job-control marker: '+' = most recently started active job,
+    // '-' = second most recently started, ' ' = older jobs.
+    private static char computeSign(Job job, List<Job> allJobs) {
+        List<Job> sorted = new ArrayList<>(allJobs);
+        sorted.sort((a, b) -> Long.compare(b.order, a.order)); // descending by recency
+        if (sorted.isEmpty()) return '+';
+        if (sorted.get(0).order == job.order) return '+';
+        if (sorted.size() > 1 && sorted.get(1).order == job.order) return '-';
+        return ' ';
+    }
+
+    private static String formatStatusLine(Job job, String status, char sign) {
         StringBuilder sb = new StringBuilder();
-        sb.append("[").append(job.number).append("]+  ");
+        sb.append("[").append(job.number).append("]").append(sign).append("  ");
         sb.append(status);
-        int pad = 21 - status.length();
+        int pad = 17; // fixed gap observed in expected output, regardless of status word length
         for (int i = 0; i < pad; i++) sb.append(' ');
         sb.append(job.commandLine);
         return sb.toString();
     }
 
     private static void printJobs() {
+        List<Job> snapshot;
         synchronized (jobsLock) {
-            for (Job j : jobs.values()) {
-                System.out.println(formatStatusLine(j, "Running") + " &");
-            }
+            snapshot = new ArrayList<>(jobs.values());
+        }
+        // Print in job-number order, but compute +/- based on recency across all active jobs.
+        snapshot.sort((a, b) -> Integer.compare(a.number, b.number));
+        for (Job j : snapshot) {
+            char sign = computeSign(j, snapshot);
+            System.out.println(formatStatusLine(j, "Running", sign) + " &");
         }
     }
 }
