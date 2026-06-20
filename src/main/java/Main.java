@@ -52,18 +52,33 @@ public class Main {
         scanner.close();
     }
 
+    // Helper to find the status flag (+ or -) based on a job's position in the active list
+    private static char getJobFlag(int index) {
+        if (index == activeJobs.size() - 1) {
+            return '+'; // Newest job
+        } else if (index == activeJobs.size() - 2) {
+            return '-'; // Second newest job
+        }
+        return ' '; // Older jobs get no flag symbol
+    }
+
     private static void checkCompletedJobs() {
         Iterator<BackgroundJob> iterator = activeJobs.iterator();
+        int idx = 0;
         while (iterator.hasNext()) {
             BackgroundJob job = iterator.next();
             if (!job.process.isAlive()) {
-                System.out.printf("[%d]+  Done                 %s%n", job.jobNo, job.originalCommand);
+                char flag = getJobFlag(idx);
+                // Print with matching space alignment
+                System.out.printf("[%d]%c  Done                 %s%n", job.jobNo, flag, job.originalCommand);
                 iterator.remove();
+                // Since removing changes the list size, break and let the next loop iteration catch others
+                break; 
             }
+            idx++;
         }
     }
 
-    // Dynamic job allocation: finds the lowest available positive integer
     private static int getNextJobNumber() {
         int candidate = 1;
         while (true) {
@@ -86,9 +101,11 @@ public class Main {
         if (args.isEmpty()) return;
 
         if (args.get(0).equals("jobs")) {
-            for (BackgroundJob job : activeJobs) {
+            for (int i = 0; i < activeJobs.size(); i++) {
+                BackgroundJob job = activeJobs.get(i);
                 if (job.process.isAlive()) {
-                    System.out.printf("[%d]+  Running              %s &%n", job.jobNo, job.originalCommand);
+                    char flag = getJobFlag(i);
+                    System.out.printf("[%d]%c  Running              %s &%n", job.jobNo, flag, job.originalCommand);
                 }
             }
             return;
@@ -123,7 +140,6 @@ public class Main {
         return new ArrayList<>(Arrays.asList(command.split("\\s+")));
     }
 
-    // Pipeline Handler Nested Class
     public static class PipelineHandler {
         public static void executePipeline(String userInput) {
             String[] pipeParts = userInput.split("\\|");
