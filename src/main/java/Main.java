@@ -3,19 +3,23 @@ if (command.equals("cd")) {
         continue;
     }
 
-    File newDir;
+    try {
+        File newDir;
 
-    if (new File(parts[1]).isAbsolute()) {
-        newDir = new File(parts[1]);
-    } else {
-        newDir = new File(currentDirectory, parts[1]);
-    }
+        if (new File(parts[1]).isAbsolute()) {
+            newDir = new File(parts[1]);
+        } else {
+            newDir = new File(currentDirectory, parts[1]);
+        }
 
-    newDir = newDir.getCanonicalFile();
+        newDir = newDir.getCanonicalFile();
 
-    if (newDir.exists() && newDir.isDirectory()) {
-        currentDirectory = newDir;
-    } else {
+        if (newDir.exists() && newDir.isDirectory()) {
+            currentDirectory = newDir;
+        } else {
+            System.out.println("cd: " + parts[1] + ": No such file or directory");
+        }
+    } catch (IOException e) {
         System.out.println("cd: " + parts[1] + ": No such file or directory");
     }
 
