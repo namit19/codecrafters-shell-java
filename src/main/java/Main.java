@@ -4,6 +4,8 @@ import java.util.Scanner;
 
 public class Main {
 
+    private static File currentDirectory = new File(System.getProperty("user.dir"));
+
     public static void main(String[] args) throws IOException, InterruptedException {
         Scanner scanner = new Scanner(System.in);
 
@@ -33,7 +35,22 @@ public class Main {
             }
 
             if (command.equals("pwd")) {
-                System.out.println(System.getProperty("user.dir"));
+                System.out.println(currentDirectory.getAbsolutePath());
+                continue;
+            }
+
+            if (command.equals("cd")) {
+                if (parts.length < 2) {
+                    continue;
+                }
+
+                File newDir = new File(parts[1]);
+
+                if (newDir.exists() && newDir.isDirectory()) {
+                    currentDirectory = newDir.getAbsoluteFile();
+                } else {
+                    System.out.println("cd: " + parts[1] + ": No such file or directory");
+                }
                 continue;
             }
 
@@ -47,7 +64,8 @@ public class Main {
                 if (target.equals("echo") ||
                     target.equals("exit") ||
                     target.equals("type") ||
-                    target.equals("pwd")) {
+                    target.equals("pwd") ||
+                    target.equals("cd")) {
                     System.out.println(target + " is a shell builtin");
                     continue;
                 }
@@ -66,6 +84,7 @@ public class Main {
 
             if (executable != null) {
                 ProcessBuilder pb = new ProcessBuilder(parts);
+                pb.directory(currentDirectory);
                 pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
                 pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
                 pb.redirectError(ProcessBuilder.Redirect.INHERIT);
