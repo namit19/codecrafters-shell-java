@@ -1,214 +1,108 @@
-import java.util.*;
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
-public class Main {
-    private static final Set<String> BUILTINS = new HashSet<>(Arrays.asList("exit", "echo", "type", "cd", "pwd"));
+public class ShellRedirect {
 
     public static void main(String[] args) {
-        Scanner scanner = new Scanner(System.in);
+        // Simulating an input string from your shell prompt
+        // Example 1: Standard command
+        // String input = "cat /tmp/baz/blueberry nonexistent 1> /tmp/foo/quz.md";
+        // Example 2: Simple echo
+        String input = "echo Hello James > /tmp/foo/foo.md";
 
-        if (System.getProperty("user.dir") == null) {
-            System.setProperty("user.dir", new File(".").getAbsolutePath());
+        try {
+            executeCommand(input);
+        } catch (Exception e) {
+            System.err.println("Execution error: " + e.getMessage());
         }
-
-        while (true) {
-            System.out.print("$ ");
-            System.out.flush();
-
-            if (!scanner.hasNextLine()) {
-                break;
-            }
-
-            String commandLine = scanner.nextLine();
-            if (commandLine.trim().isEmpty()) {
-                continue;
-            }
-
-            List<String> parsedArgs = parseArguments(commandLine);
-            if (parsedArgs.isEmpty()) {
-                continue;
-            }
-
-            String command = parsedArgs.get(0);
-
-            // Handle built-in commands
-            if (command.equals("exit")) {
-                System.exit(0);
-            } else if (command.equals("echo")) {
-                for (int i = 1; i < parsedArgs.size(); i++) {
-                    System.out.print(parsedArgs.get(i));
-                    if (i < parsedArgs.size() - 1) {
-                        System.out.print(" ");
-                    }
-                }
-                System.out.println();
-            } else if (command.equals("type")) {
-                handleTypeCommand(parsedArgs);
-            } else if (command.equals("cd")) {
-                handleCdCommand(parsedArgs);
-            } else if (command.equals("pwd")) {
-                System.out.println(System.getProperty("user.dir"));
-            } else {
-                executeExternalCommand(parsedArgs);
-            }
-        }
-        scanner.close();
     }
 
-    private static List<String> parseArguments(String commandLine) {
-        List<String> args = new ArrayList<>();
-        StringBuilder currentArg = new StringBuilder();
-        
-        boolean inSingleQuotes = false;
-        boolean inDoubleQuotes = false;
-        boolean hasContent = false; 
+    public static void processCommand(String input) throws IOException, InterruptedException {
+        // Step 1: Split input into raw tokens by whitespace
+        String[] tokens = input.trim().split("\\s+");
+        if (tokens.length == 0 || tokens[0].isEmpty()) {
+            return;
+        }
 
-        for (int i = 0; i < commandLine.length(); i++) {
-            char ch = commandLine.charAt(i);
+        List<String> commandArgs = new ArrayList<>();
+        String redirectFilePath = null;
 
-            // 1. Handle backslash outside of any quotes
-            if (ch == '\\' && !inSingleQuotes && !inDoubleQuotes) {
-                if (i + 1 < commandLine.length()) {
+        // Step 2: Parse tokens to separate command args from redirection
+        for (int i = 0; i < tokens.length; i++) {
+            if (tokens[i].equals(">") || tokens[i].equals("1>")) {
+                if (i + 1 < tokens.length) {
+                    redirectFilePath = tokens[i + 1];
+                    // Skip the filename token since we've captured it
                     i++; 
-                    currentArg.append(commandLine.charAt(i)); 
-                    hasContent = true;
-                }
-            } 
-            // 2. Handle backslash conditionally inside double quotes
-            else if (ch == '\\' && inDoubleQuotes) {
-                if (i + 1 < commandLine.length()) {
-                    char nextCh = commandLine.charAt(i + 1);
-                    // Inside double quotes, only escape specific characters: ", \, $, `, newline
-                    if (nextCh == '"' || nextCh == '\\' || nextCh == '$' || nextCh == '`') {
-                        currentArg.append(nextCh);
-                        i++; // Consume the escaped character
-                    } else {
-                        // Otherwise, treat backslash as a literal backslash
-                        currentArg.append(ch);
-                    }
-                    hasContent = true;
                 } else {
-                    currentArg.append(ch);
-                    hasContent = true;
-                }
-            } 
-            // 3. Handle quote context toggling
-            else if (ch == '\'' && !inDoubleQuotes) {
-                inSingleQuotes = !inSingleQuotes;
-                hasContent = true; 
-            } else if (ch == '"' && !inSingleQuotes) {
-                inDoubleQuotes = !inDoubleQuotes;
-                hasContent = true;
-            } 
-            // 4. Default processing inside quotes
-            else if (inSingleQuotes || inDoubleQuotes) {
-                currentArg.append(ch);
-            } 
-            // 5. Default processing outside quotes
-            else {
-                if (Character.isWhitespace(ch)) {
-                    if (currentArg.length() > 0 || hasContent) {
-                        args.add(currentArg.toString());
-                        currentArg.setLength(0); 
-                        hasContent = false;
-                    }
-                } else {
-                    currentArg.append(ch);
-                    hasContent = true;
-                }
-            }
-        }
-
-        if (currentArg.length() > 0 || hasContent) {
-            args.add(currentArg.toString());
-        }
-
-        return args;
-    }
-
-    private static void handleTypeCommand(List<String> args) {
-        if (args.size() < 2) {
-            return;
-        }
-        String targetCommand = args.get(1);
-
-        if (BUILTINS.contains(targetCommand)) {
-            System.out.println(targetCommand + " is a shell builtin");
-            return;
-        }
-
-        String pathEnv = System.getenv("PATH");
-        if (pathEnv != null) {
-            String delimiter = System.getProperty("path.separator");
-            for (String path : pathEnv.split(delimiter)) {
-                File exe = new File(path, targetCommand);
-                if (exe.isFile() && exe.canExecute()) {
-                    System.out.println(targetCommand + " is " + exe.getAbsolutePath());
+                    System.err.println("syntax error near unexpected token 'newline'");
                     return;
                 }
+            } else {
+                commandArgs.add(tokens[i]);
             }
         }
 
-        System.out.println(targetCommand + ": not found");
-    }
+        // Step 3: Handle execution
+        if (commandArgs.isEmpty()) return;
 
-    private static void handleCdCommand(List<String> args) {
-        String targetPath;
-
-        if (args.size() < 2 || args.get(1).equals("~")) {
-            targetPath = System.getenv("HOME");
-            if (targetPath == null) {
-                targetPath = System.getProperty("user.home");
-            }
+        // Handle shell built-ins manually (like echo)
+        if (commandArgs.get(0).equals("echo")) {
+            handleEcho(commandArgs, redirectFilePath);
         } else {
-            targetPath = args.get(1);
-        }
-
-        File directory = new File(targetPath);
-        if (!directory.isAbsolute()) {
-            directory = new File(System.getProperty("user.dir"), targetPath);
-        }
-
-        if (directory.exists() && directory.isDirectory()) {
-            try {
-                System.setProperty("user.dir", directory.getCanonicalPath());
-            } catch (IOException e) {
-                System.setProperty("user.dir", directory.getAbsolutePath());
-            }
-        } else {
-            System.out.println("cd: " + args.get(1) + ": No such file or directory");
+            // Handle external system binaries (cat, ls, pwd, etc.)
+            handleExternalCommand(commandArgs, redirectFilePath);
         }
     }
 
-    private static void executeExternalCommand(List<String> args) {
-        String command = args.get(0);
-        String pathEnv = System.getenv("PATH");
-        boolean found = false;
-
-        if (pathEnv != null) {
-            String delimiter = System.getProperty("path.separator");
-            for (String path : pathEnv.split(delimiter)) {
-                File exe = new File(path, command);
-                if (exe.isFile() && exe.canExecute()) {
-                    found = true;
-                    break;
-                }
-            }
+    private static void handleEcho(List<String> args, String redirectPath) throws IOException {
+        // Reconstruct the echo string (skipping the word 'echo' itself)
+        StringBuilder sb = new StringBuilder();
+        for (int i = 1; i < args.size(); i++) {
+            sb.append(args.get(i));
+            if (i < args.size() - 1) sb.append(" ");
         }
+        sb.append("\n");
 
-        if (!found) {
-            System.out.println(command + ": command not found");
-            return;
+        if (redirectPath != null) {
+            // Write directly to the file (overwriting existing content)
+            File file = new File(redirectPath);
+            // Ensure parent directories exist if testing environment expects it
+            if (file.getParentFile() != null) {
+                file.getParentFile().mkdirs();
+            }
+            java.nio.file.Files.writeString(file.toPath(), sb.toString());
+        } else {
+            System.out.print(sb.toString());
+        }
+    }
+
+    private static void handleExternalCommand(List<String> args, String redirectPath) throws IOException, InterruptedException {
+        ProcessBuilder pb = new ProcessBuilder(args);
+
+        if (redirectPath != null) {
+            File outputFile = new File(redirectPath);
+            if (outputFile.getParentFile() != null) {
+                outputFile.getParentFile().mkdirs();
+            }
+            
+            // Redirects standard output (1) to the file
+            pb.redirectOutput(ProcessBuilder.Redirect.to(outputFile));
+            // Keep standard error (2) bound to the console
+            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+        } else {
+            // No redirection, pipe everything to terminal
+            pb.inheritIO();
         }
 
         try {
-            ProcessBuilder pb = new ProcessBuilder(args);
-            pb.directory(new File(System.getProperty("user.dir"))); 
-            pb.inheritIO(); 
             Process process = pb.start();
-            process.waitFor();
-        } catch (Exception e) {
-            System.out.println(command + ": error running command");
+            process.waitFor(); // Wait for the command to finish executing
+        } catch (IOException e) {
+            // Handle case where binary doesn't exist on system PATH
+            System.err.println(args.get(0) + ": command not found");
         }
     }
 }
