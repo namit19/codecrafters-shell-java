@@ -68,25 +68,20 @@ public class Main {
 
             // Handle backslash outside of any quotes
             if (ch == '\\' && !inSingleQuotes && !inDoubleQuotes) {
-                // Peek at the next character if it exists
                 if (i + 1 < commandLine.length()) {
-                    i++; // Skip the backslash character index
-                    currentArg.append(commandLine.charAt(i)); // Add next char literally
+                    i++; 
+                    currentArg.append(commandLine.charAt(i)); 
                     hasContent = true;
                 }
             } else if (ch == '\'' && !inDoubleQuotes) {
-                // Toggle single quotes ONLY if we aren't inside double quotes
                 inSingleQuotes = !inSingleQuotes;
                 hasContent = true; 
             } else if (ch == '"' && !inSingleQuotes) {
-                // Toggle double quotes ONLY if we aren't inside single quotes
                 inDoubleQuotes = !inDoubleQuotes;
                 hasContent = true;
             } else if (inSingleQuotes || inDoubleQuotes) {
-                // Inside any active quote block, treat everything literally
                 currentArg.append(ch);
             } else {
-                // Outside all quotes and unescaped, handle spacing and delimiters
                 if (Character.isWhitespace(ch)) {
                     if (currentArg.length() > 0 || hasContent) {
                         args.add(currentArg.toString());
@@ -120,4 +115,76 @@ public class Main {
 
         String pathEnv = System.getenv("PATH");
         if (pathEnv != null) {
-            String delimiter
+            String delimiter = System.getProperty("path.separator");
+            for (String path : pathEnv.split(delimiter)) {
+                File exe = new File(path, targetCommand);
+                if (exe.isFile() && exe.canExecute()) {
+                    System.out.println(targetCommand + " is " + exe.getAbsolutePath());
+                    return;
+                }
+            }
+        }
+
+        System.out.println(targetCommand + ": not found");
+    }
+
+    private static void handleCdCommand(List<String> args) {
+        String targetPath;
+
+        if (args.size() < 2 || args.get(1).equals("~")) {
+            targetPath = System.getenv("HOME");
+            if (targetPath == null) {
+                targetPath = System.getProperty("user.home");
+            }
+        } else {
+            targetPath = args.get(1);
+        }
+
+        File directory = new File(targetPath);
+        if (!directory.isAbsolute()) {
+            directory = new File(System.getProperty("user.dir"), targetPath);
+        }
+
+        if (directory.exists() && directory.isDirectory()) {
+            try {
+                System.setProperty("user.dir", directory.getCanonicalPath());
+            } catch (IOException e) {
+                System.setProperty("user.dir", directory.getAbsolutePath());
+            }
+        } else {
+            System.out.println("cd: " + args.get(1) + ": No such file or directory");
+        }
+    }
+
+    private static void executeExternalCommand(List<String> args) {
+        String command = args.get(0);
+        String pathEnv = System.getenv("PATH");
+        boolean found = false;
+
+        if (pathEnv != null) {
+            String delimiter = System.getProperty("path.separator");
+            for (String path : pathEnv.split(delimiter)) {
+                File exe = new File(path, command);
+                if (exe.isFile() && exe.canExecute()) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if (!found) {
+            System.out.println(command + ": command not found");
+            return;
+        }
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder(args);
+            pb.directory(new File(System.getProperty("user.dir"))); 
+            pb.inheritIO(); 
+            Process process = pb.start();
+            process.waitFor();
+        } catch (Exception e) {
+            System.out.println(command + ": error running command");
+        }
+    }
+}
