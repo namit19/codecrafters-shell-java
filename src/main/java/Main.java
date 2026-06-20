@@ -1,40 +1,48 @@
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class Main {
+    private static String currentDir = System.getProperty("user.dir");
+    private static final List<String> BUILTINS = Arrays.asList("echo", "exit", "type", "pwd", "cd");
 
-    private static List<String> parseCommand(String input) {
-        List<String> args = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
+    public static void main(String[] args) throws IOException {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
 
-        boolean inSingleQuotes = false;
+        while (true) {
+            System.out.print("$ ");
+            System.out.flush();
+            String input = reader.readLine();
 
-        for (int i = 0; i < input.length(); i++) {
-            char ch = input.charAt(i);
+            if (input == null) {
+                break;
+            }
 
-            if (ch == '\'') {
-                inSingleQuotes = !inSingleQuotes;
+            input = input.trim();
+            if (input.isEmpty()) {
                 continue;
             }
 
-            if (Character.isWhitespace(ch) && !inSingleQuotes) {
-                if (current.length() > 0) {
-                    args.add(current.toString());
-                    current.setLength(0);
-                }
-            } else {
-                current.append(ch);
-            }
-        }
+            List<String> tokens = parseInput(input);
+            String command = tokens.get(0);
+            List<String> commandArgs = tokens.subList(1, tokens.size());
 
-        if (current.length() > 0) {
-            args.add(current.toString());
-        }
-
-        return args;
-    }
-
-    public static void main(String[] args) throws Exception {
-        // your shell code here
-    }
-}
+            switch (command) {
+                case "echo":
+                    System.out.println(String.join(" ", commandArgs));
+                    break;
+                case "pwd":
+                    System.out.println(currentDir);
+                    break;
+                case "cd":
+                    handleCd(commandArgs);
+                    break;
+                case "type":
+                    handleType(commandArgs);
+                    break;
+                case "exit":
+                    int code = commandArgs.isEmpty() ? 0 :
