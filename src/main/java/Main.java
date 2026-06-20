@@ -15,11 +15,13 @@ public class Main {
             String input = scanner.nextLine().trim();
             if (input.isEmpty()) continue;
 
-            // Parse inputs into tokens, preserving spaces where necessary if quotes exist
-            String[] parts = parseArguments(input);
-            if (parts.length == 0) continue;
+            // Parse the entire line into tokens at once, respecting quotes
+            List<String> tokens = parseArguments(input);
+            if (tokens.isEmpty()) continue;
             
-            String command = parts[0];
+            String command = tokens.get(0);
+            // Convert to array for compatibility with the rest of your architecture
+            String[] parts = tokens.toArray(new String[0]);
 
             switch (command) {
                 case "exit":
@@ -43,7 +45,6 @@ public class Main {
                     break;
 
                 case "jobs":
-                    // Intentional blank implementation for the jobs builtin stage
                     break;
 
                 default:
@@ -80,7 +81,6 @@ public class Main {
         boolean redirectStdout = false;
         boolean redirectStderr = false;
 
-        // Parse redirection tokens out of the arguments array
         for (int i = 0; i < rawArgs.length; i++) {
             String arg = rawArgs[i];
             if (arg.equals(">") || arg.equals("1>")) {
@@ -109,7 +109,6 @@ public class Main {
 
             if (redirectFile != null) {
                 File targetFile = new File(redirectFile);
-                // Ensure parent directories exist for the redirection target
                 File parentDir = targetFile.getParentFile();
                 if (parentDir != null && !parentDir.exists()) {
                     parentDir.mkdirs();
@@ -134,29 +133,65 @@ public class Main {
     }
 
     /**
-     * Splits arguments accurately while respecting spaces inside quotes if present.
+     * A unified state-machine parsing loop that handles spaces, 
+     * single quotes, double quotes, and backslashes correctly.
      */
-    private static String[] parseArguments(String input) {
+    private static List<String> parseArguments(String input) {
         List<String> list = new ArrayList<>();
         StringBuilder sb = new StringBuilder();
-        boolean inQuotes = false;
         
+        boolean inSingleQuotes = false;
+        boolean inDoubleQuotes = false;
+        boolean escaped = false;
+        boolean hasContent = false;
+
         for (int i = 0; i < input.length(); i++) {
             char c = input.charAt(i);
-            if (c == '\"') {
-                inQuotes = !inQuotes;
-            } else if (c == ' ' && !inQuotes) {
-                if (sb.length() > 0) {
+
+            if (escaped) {
+                sb.append(c);
+                hasContent = true;
+                escaped = false;
+            } else if (c == '\\' && !inSingleQuotes) {
+                // In double quotes, backslash only escapes specific characters
+                if (inDoubleQuotes) {
+                    if (i + 1 < input.length()) {
+                        char next = input.charAt(i + 1);
+                        if (next == '$' || next == '`' || next == '"' || next == '\\' || next == '\n') {
+                            escaped = true;
+                        } else {
+                            sb.append(c);
+                            hasContent = true;
+                        }
+                    } else {
+                        sb.append(c);
+                        hasContent = true;
+                    }
+                } else {
+                    escaped = true;
+                }
+            } else if (c == '\'' && !inDoubleQuotes) {
+                inSingleQuotes = !inSingleQuotes;
+                hasContent = true; // Marks that a token exists even if empty (e.g. '')
+            } else if (c == '"' && !inSingleQuotes) {
+                inDoubleQuotes = !inDoubleQuotes;
+                hasContent = true;
+            } else if (c == ' ' && !inSingleQuotes && !inDoubleQuotes) {
+                if (sb.length() > 0 || hasContent) {
                     list.add(sb.toString());
                     sb.setLength(0);
+                    hasContent = false;
                 }
             } else {
                 sb.append(c);
+                hasContent = true;
             }
         }
-        if (sb.length() > 0) {
+
+        if (sb.length() > 0 || hasContent) {
             list.add(sb.toString());
         }
-        return list.toArray(new String[0]);
+
+        return list;
     }
 }
