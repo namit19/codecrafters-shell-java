@@ -84,47 +84,31 @@ public class Main {
                     break;
 
                 case "jobs":
-                    // 1. Snapshot active running jobs *before* printing or modifying state
-                    List<Job> activeJobs = new ArrayList<>();
-                    for (Job j : jobs) {
-                        if (j.process.isAlive()) {
-                            activeJobs.add(j);
-                        }
-                    }
-
                     List<Job> reaped = new ArrayList<>();
 
-                    // 2. Loop through all tracked jobs sequentially by job number
+                    // Loop through all tracked jobs sequentially by job number
                     for (int i = 0; i < jobs.size(); i++) {
                         Job job = jobs.get(i);
                         char marker = ' ';
 
-                        if (job.process.isAlive()) {
-                            // Target alive job relative index positioning
-                            int idx = activeJobs.indexOf(job);
-                            if (activeJobs.size() == 1 || idx == activeJobs.size() - 1) {
-                                marker = '+';
-                            } else if (idx == activeJobs.size() - 2) {
-                                marker = '-';
-                            }
+                        // Markers are evaluated relative to the absolute current printing snapshot
+                        if (jobs.size() == 1 || i == jobs.size() - 1) {
+                            marker = '+';
+                        } else if (i == jobs.size() - 2) {
+                            marker = '-';
+                        }
 
+                        if (job.process.isAlive()) {
                             String statusField = String.format("%-24s", "Running");
                             System.out.println("[" + job.number + "]" + marker + "  " + statusField + job.command);
                         } else {
-                            // If it's dead, evaluate its structural marker assignment relative to the absolute list length
-                            if (jobs.size() == 1 || i == jobs.size() - 1) {
-                                marker = '+';
-                            } else if (i == jobs.size() - 2) {
-                                marker = '-';
-                            }
-
                             String statusField = String.format("%-24s", "Done");
                             System.out.println("[" + job.number + "]" + marker + "  " + statusField + cleanCommand(job.command));
                             reaped.add(job);
                         }
                     }
 
-                    // Flush dead elements out of global list entirely
+                    // Flush dead elements out of global list entirely after printing
                     jobs.removeAll(reaped);
                     break;
 
