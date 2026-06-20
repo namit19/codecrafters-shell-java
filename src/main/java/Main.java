@@ -66,24 +66,46 @@ public class Main {
         for (int i = 0; i < commandLine.length(); i++) {
             char ch = commandLine.charAt(i);
 
-            // Handle backslash outside of any quotes
+            // 1. Handle backslash outside of any quotes
             if (ch == '\\' && !inSingleQuotes && !inDoubleQuotes) {
                 if (i + 1 < commandLine.length()) {
                     i++; 
                     currentArg.append(commandLine.charAt(i)); 
                     hasContent = true;
                 }
-            } else if (ch == '\'' && !inDoubleQuotes) {
+            } 
+            // 2. Handle backslash conditionally inside double quotes
+            else if (ch == '\\' && inDoubleQuotes) {
+                if (i + 1 < commandLine.length()) {
+                    char nextCh = commandLine.charAt(i + 1);
+                    // Inside double quotes, only escape specific characters: ", \, $, `, newline
+                    if (nextCh == '"' || nextCh == '\\' || nextCh == '$' || nextCh == '`') {
+                        currentArg.append(nextCh);
+                        i++; // Consume the escaped character
+                    } else {
+                        // Otherwise, treat backslash as a literal backslash
+                        currentArg.append(ch);
+                    }
+                    hasContent = true;
+                } else {
+                    currentArg.append(ch);
+                    hasContent = true;
+                }
+            } 
+            // 3. Handle quote context toggling
+            else if (ch == '\'' && !inDoubleQuotes) {
                 inSingleQuotes = !inSingleQuotes;
                 hasContent = true; 
             } else if (ch == '"' && !inSingleQuotes) {
                 inDoubleQuotes = !inDoubleQuotes;
                 hasContent = true;
-            } else if (inSingleQuotes || inDoubleQuotes) {
-                // When inSingleQuotes is true, backslashes fall straight into here
-                // and are safely appended as literal characters.
+            } 
+            // 4. Default processing inside quotes
+            else if (inSingleQuotes || inDoubleQuotes) {
                 currentArg.append(ch);
-            } else {
+            } 
+            // 5. Default processing outside quotes
+            else {
                 if (Character.isWhitespace(ch)) {
                     if (currentArg.length() > 0 || hasContent) {
                         args.add(currentArg.toString());
