@@ -31,8 +31,8 @@ public class Main {
         Scanner scanner = new Scanner(System.in);
 
         while (true) {
-            // Stage requirement: Reap any finished background jobs automatically *before* printing the prompt
-            reapCompletedJobs(false);
+            // Automatic reaping before each prompt: Only prints and removes "Done" jobs
+            reapDeadJobsBeforePrompt();
 
             System.out.print("$ ");
             if (!scanner.hasNextLine()) break;
@@ -88,29 +88,47 @@ public class Main {
                     break;
 
                 case "jobs":
-                    // First reap finished ones, printing them out
-                    reapCompletedJobs(true);
-
-                    // Then list all surviving active background processes
-                    List<Job> activeJobs = new ArrayList<>();
+                    // Gather currently alive jobs to dynamically compute markers (+ and -)
+                    List<Job> aliveJobs = new ArrayList<>();
                     for (Job job : jobs) {
                         if (job.process.isAlive()) {
-                            activeJobs.add(job);
+                            aliveJobs.add(job);
                         }
                     }
 
-                    for (int i = 0; i < activeJobs.size(); i++) {
-                        Job job = activeJobs.get(i);
+                    List<Job> reaped = new ArrayList<>();
+
+                    // Print all tracking jobs sequentially by job number
+                    for (int i = 0; i < jobs.size(); i++) {
+                        Job job = jobs.get(i);
                         char marker = ' ';
-                        if (activeJobs.size() == 1 || i == activeJobs.size() - 1) {
-                            marker = '+';
-                        } else if (i == activeJobs.size() - 2) {
-                            marker = '-';
-                        }
 
-                        String statusField = String.format("%-24s", "Running");
-                        System.out.println("[" + job.number + "]" + marker + "  " + statusField + job.command);
+                        if (job.process.isAlive()) {
+                            int activeIdx = aliveJobs.indexOf(job);
+                            if (aliveJobs.size() == 1 || activeIdx == aliveJobs.size() - 1) {
+                                marker = '+';
+                            } else if (activeIdx == aliveJobs.size() - 2) {
+                                marker = '-';
+                            }
+
+                            String statusField = String.format("%-24s", "Running");
+                            System.out.println("[" + job.number + "]" + marker + "  " + statusField + job.command);
+                        } else {
+                            // If it's dead, compute its temporary position marker contextually
+                            if (jobs.size() == 1 || i == jobs.size() - 1) {
+                                marker = '+';
+                            } else if (i == jobs.size() - 2) {
+                                marker = '-';
+                            }
+
+                            String statusField = String.format("%-24s", "Done");
+                            System.out.println("[" + job.number + "]" + marker + "  " + statusField + cleanCommand(job.command));
+                            reaped.add(job);
+                        }
                     }
+
+                    // Remove completed jobs from table so they don't appear next time
+                    jobs.removeAll(reaped);
                     break;
 
                 case "cd":
@@ -135,58 +153,37 @@ public class Main {
     }
 
     /**
-     * Unified reaping mechanism used both automatically before prompts and inside the jobs builtin.
+     * Automatic reaping logic called explicitly before the prompt is printed.
+     * Only displays and flushes jobs that have exited normally.
      */
-    private static void reapCompletedJobs(boolean insideJobsBuiltin) {
-        List<Job> reapedJobs = new ArrayList<>();
-
-        // Capture which processes are alive right now before removing dead items
-        List<Job> activeJobsBeforeReap = new ArrayList<>();
-        for (Job job : jobs) {
-            if (job.process.isAlive()) {
-                activeJobsBeforeReap.add(job);
-            }
-        }
-
+    private static void reapDeadJobsBeforePrompt() {
+        List<Job> reaped = new ArrayList<>();
+        
         for (int i = 0; i < jobs.size(); i++) {
             Job job = jobs.get(i);
-
             if (!job.process.isAlive()) {
                 char marker = ' ';
-                
-                if (jobs.size() == 1) {
+                if (jobs.size() == 1 || i == jobs.size() - 1) {
                     marker = '+';
-                } else if (activeJobsBeforeReap.isEmpty()) {
-                    // If all jobs are dead, the last item printed takes '+'
-                    if (i == jobs.size() - 1) {
-                        marker = '+';
-                    } else if (i == jobs.size() - 2) {
-                        marker = '-';
-                    }
-                } else {
-                    // Align markers accurately against positions
-                    if (i == jobs.size() - 1) {
-                        marker = '+';
-                    } else if (i == jobs.size() - 2) {
-                        marker = '-';
-                    }
+                } else if (i == jobs.size() - 2) {
+                    marker = '-';
                 }
 
                 String statusField = String.format("%-24s", "Done");
-                String cleanCommand = job.command;
-                if (cleanCommand.endsWith(" &")) {
-                    cleanCommand = cleanCommand.substring(0, cleanCommand.length() - 2);
-                } else if (cleanCommand.endsWith("&")) {
-                    cleanCommand = cleanCommand.substring(0, cleanCommand.length() - 1);
-                }
-
-                System.out.println("[" + job.number + "]" + marker + "  " + statusField + cleanCommand);
-                reapedJobs.add(job);
+                System.out.println("[" + job.number + "]" + marker + "  " + statusField + cleanCommand(job.command));
+                reaped.add(job);
             }
         }
+        jobs.removeAll(reaped);
+    }
 
-        // Purge reaped entries from memory tracking
-        jobs.removeAll(reapedJobs);
+    private static String cleanCommand(String cmd) {
+        if (cmd.endsWith(" &")) {
+            return cmd.substring(0, cmd.length() - 2);
+        } else if (cmd.endsWith("&")) {
+            return cmd.substring(0, cmd.length() - 1);
+        }
+        return cmd;
     }
 
     private static void runInBackground(String[] rawArgs, String originalCommandLine) {
