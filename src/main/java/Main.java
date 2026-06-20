@@ -2,6 +2,9 @@ import java.util.*;
 import java.io.*;
 
 public class Main {
+    // List of recognized shell built-in commands
+    private static final Set<String> BUILTINS = new HashSet<>(Arrays.asList("exit", "echo", "type", "cd", "pwd"));
+
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
 
@@ -42,8 +45,13 @@ public class Main {
                     }
                 }
                 System.out.println();
+            } else if (command.equals("type")) {
+                handleTypeCommand(parsedArgs);
             } else if (command.equals("cd")) {
                 handleCdCommand(parsedArgs);
+            } else if (command.equals("pwd")) {
+                // The pwd built-in simply prints the current user.dir property
+                System.out.println(System.getProperty("user.dir"));
             } else {
                 // Handle external executables (like cat)
                 executeExternalCommand(parsedArgs);
@@ -85,6 +93,34 @@ public class Main {
         }
 
         return args;
+    }
+
+    private static void handleTypeCommand(List<String> args) {
+        if (args.size() < 2) {
+            return;
+        }
+        String targetCommand = args.get(1);
+
+        // Check if it's a built-in
+        if (BUILTINS.contains(targetCommand)) {
+            System.out.println(targetCommand + " is a shell builtin");
+            return;
+        }
+
+        // Check if it's an external executable in the PATH
+        String pathEnv = System.getenv("PATH");
+        if (pathEnv != null) {
+            String delimiter = System.getProperty("path.separator");
+            for (String path : pathEnv.split(delimiter)) {
+                File exe = new File(path, targetCommand);
+                if (exe.isFile() && exe.canExecute()) {
+                    System.out.println(targetCommand + " is " + exe.getAbsolutePath());
+                    return;
+                }
+            }
+        }
+
+        System.out.println(targetCommand + ": not found");
     }
 
     private static void handleCdCommand(List<String> args) {
