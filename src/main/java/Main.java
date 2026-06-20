@@ -273,7 +273,7 @@ public class Main {
                 }
             } catch (InterruptedException ignored) {
             } finally {
-                job.finished = true; // main loop reports + recycles this number
+                job.finished = true; // detected & reported by reportFinishedJobs() or printJobs()
             }
         });
         reaper.setDaemon(true);
@@ -291,6 +291,7 @@ public class Main {
 
     // Prints "[N]+/-  Done                 <command>" for any finished jobs,
     // then removes them so the number can be recycled by a future job.
+    // Called before every new prompt is printed.
     private static void reportFinishedJobs() {
         List<Job> done = new ArrayList<>();
         List<Job> snapshotAll;
@@ -332,16 +333,34 @@ public class Main {
         return sb.toString();
     }
 
+    // The "jobs" builtin: checks EACH job's finished flag at the moment it runs
+    // (not just at the next prompt), so a job that completed between the previous
+    // prompt and this "jobs" invocation is shown/reaped as "Done" right here,
+    // instead of lingering as "Running" until the next loop iteration.
     private static void printJobs() {
         List<Job> snapshot;
         synchronized (jobsLock) {
             snapshot = new ArrayList<>(jobs.values());
         }
-        // Print in job-number order, but compute +/- based on recency across all active jobs.
         snapshot.sort((a, b) -> Integer.compare(a.number, b.number));
+
+        List<Job> toRemove = new ArrayList<>();
         for (Job j : snapshot) {
             char sign = computeSign(j, snapshot);
-            System.out.println(formatStatusLine(j, "Running", sign) + " &");
+            if (j.finished) {
+                System.out.println(formatStatusLine(j, "Done", sign));
+                toRemove.add(j);
+            } else {
+                System.out.println(formatStatusLine(j, "Running", sign) + " &");
+            }
+        }
+
+        if (!toRemove.isEmpty()) {
+            synchronized (jobsLock) {
+                for (Job j : toRemove) {
+                    jobs.remove(j.number);
+                }
+            }
         }
     }
 }
