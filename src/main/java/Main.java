@@ -3,69 +3,112 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Scanner;
 
-public class PipelineHandler {
+public class Main {
 
-    public static void executePipeline(String userInput) {
-        // 1. Split the command by the pipe character
-        String[] pipeParts = userInput.split("\\|");
-        if (pipeParts.length != 2) {
-            System.err.println("This implementation only supports two-stage pipelines.");
-            return;
-        }
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
 
-        // Clean up whitespace and tokenize arguments
-        List<String> cmd1Args = parseCommand(pipeParts[0].trim());
-        List<String> cmd2Args = parseCommand(pipeParts[1].trim());
-
-        try {
-            // 2. Start the first process (e.g., cat or tail -f)
-            ProcessBuilder pb1 = new ProcessBuilder(cmd1Args);
-            // Redirect error to standard err so it doesn't pollute the pipe
-            pb1.redirectError(ProcessBuilder.Redirect.INHERIT); 
-            Process p1 = pb1.start();
-
-            // 3. Start the second process (e.g., wc or head)
-            ProcessBuilder pb2 = new ProcessBuilder(cmd2Args);
-            pb2.redirectError(ProcessBuilder.Redirect.INHERIT);
-            // The final output needs to go to the user's console
-            pb2.redirectOutput(ProcessBuilder.Redirect.INHERIT); 
-            Process p2 = pb2.start();
-
-            // 4. Create a background thread to pump data from P1 to P2
-            Thread pipeThread = new Thread(() -> {
-                try (InputStream inputFromP1 = p1.getInputStream();
-                     OutputStream outputToP2 = p2.getOutputStream()) {
-                    
-                    byte[] buffer = new byte[4096];
-                    int bytesRead;
-                    // Continuously read from p1 and write to p2
-                    while ((bytesRead = inputFromP1.read(buffer)) != -1) {
-                        outputToP2.write(buffer, 0, bytesRead);
-                        outputToP2.flush(); // Crucial for real-time streaming like tail -f
-                    }
-                } catch (Exception e) {
-                    // Handle or suppress broken pipe exceptions when p2 closes early (like 'head -n 5')
-                }
-            });
-            pipeThread.start();
-
-            // 5. Wait for the processes to finish
-            int p1ExitCode = p1.waitFor();
+        // Standard REPL loop for a shell
+        while (true) {
+            System.out.print("$ ");
+            if (!scanner.hasNextLine()) {
+                break;
+            }
             
-            // Wait for P1's stream to finish pumping, then close P2's input so it knows no more data is coming
-            pipeThread.join(); 
-            p2.getOutputStream().close(); 
+            String input = scanner.nextLine().trim();
+            if (input.isEmpty()) {
+                continue;
+            }
 
-            int p2ExitCode = p2.waitFor();
+            // Exit command
+            if (input.equals("exit")) {
+                break;
+            }
 
+            // Check if the user input contains a pipeline operator
+            if (input.contains("|")) {
+                PipelineHandler.executePipeline(input);
+            } else {
+                // Handle regular single commands
+                executeSingleCommand(input);
+            }
+        }
+        scanner.close();
+    }
+
+    private static void executeSingleCommand(String input) {
+        List<String> args = parseCommand(input);
+        try {
+            ProcessBuilder pb = new ProcessBuilder(args);
+            pb.inheritIO(); // Directly link to standard input/output/error
+            Process p = pb.start();
+            p.waitFor();
         } catch (Exception e) {
-            e.printStackTrace();
+            System.out.println(args.get(0) +": command not found");
         }
     }
 
-    // Helper method to split command strings by spaces while ignoring extra spaces
+    // Helper method to split command strings by spaces
     private static List<String> parseCommand(String command) {
         return new ArrayList<>(Arrays.asList(command.split("\\s+")));
+    }
+
+    // Pipeline handler nested safely inside Main
+    public static class PipelineHandler {
+        public static void executePipeline(String userInput) {
+            String[] pipeParts = userInput.split("\\|");
+            if (pipeParts.length != 2) {
+                System.err.println("This stage only supports two-stage pipelines.");
+                return;
+            }
+
+            List<String> cmd1Args = parseCommand(pipeParts[0].trim());
+            List<String> cmd2Args = parseCommand(pipeParts[1].trim());
+
+            try {
+                // 1. Start the first process (e.g., tail -f)
+                ProcessBuilder pb1 = new ProcessBuilder(cmd1Args);
+                pb1.redirectError(ProcessBuilder.Redirect.INHERIT); 
+                Process p1 = pb1.start();
+
+                // 2. Start the second process (e.g., head -n 5)
+                ProcessBuilder pb2 = new ProcessBuilder(cmd2Args);
+                pb2.redirectError(ProcessBuilder.Redirect.INHERIT);
+                pb2.redirectOutput(ProcessBuilder.Redirect.INHERIT); // Output goes to terminal
+                Process p2 = pb2.start();
+
+                // 3. Background thread to pump bytes from P1 to P2 continuously
+                Thread pipeThread = new Thread(() -> {
+                    try (InputStream inputFromP1 = p1.getInputStream();
+                         OutputStream outputToP2 = p2.getOutputStream()) {
+                        
+                        byte[] buffer = new byte[4096];
+                        int bytesRead;
+                        while ((bytesRead = inputFromP1.read(buffer)) != -1) {
+                            outputToP2.write(buffer, 0, bytesRead);
+                            outputToP2.flush(); // Forces data out instantly for real-time streams
+                        }
+                    } catch (Exception e) {
+                        // Subside broken pipe exceptions (e.g., when 'head' stops reading early)
+                    }
+                });
+                pipeThread.start();
+
+                // 4. Wait for P1 to exit or finish tracking
+                p1.waitFor();
+                
+                // 5. Cleanup streams after P1 completes
+                pipeThread.join(); 
+                p2.getOutputStream().close(); 
+
+                // 6. Wait for P2 to finish printing the final output
+                p2.waitFor();
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
     }
 }
