@@ -1,8 +1,10 @@
 import java.io.File;
+import java.io.IOException;
+import java.util.Arrays;
 import java.util.Scanner;
 
 public class Main {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException, InterruptedException {
         Scanner scanner = new Scanner(System.in);
 
         while (true) {
@@ -10,7 +12,11 @@ public class Main {
 
             String input = scanner.nextLine();
 
-            String[] parts = input.split(" ", 2);
+            if (input.isEmpty()) {
+                continue;
+            }
+
+            String[] parts = input.split(" ");
             String command = parts[0];
 
             if (command.equals("exit")) {
@@ -19,7 +25,7 @@ public class Main {
 
             if (command.equals("echo")) {
                 if (parts.length > 1) {
-                    System.out.println(parts[1]);
+                    System.out.println(input.substring(5));
                 } else {
                     System.out.println();
                 }
@@ -40,31 +46,51 @@ public class Main {
                     continue;
                 }
 
-                String pathEnv = System.getenv("PATH");
-                String[] paths = pathEnv.split(File.pathSeparator);
+                String executable = findExecutable(target);
 
-                boolean found = false;
-
-                for (String dir : paths) {
-                    File file = new File(dir, target);
-
-                    if (file.exists() && file.isFile() && file.canExecute()) {
-                        System.out.println(target + " is " + file.getAbsolutePath());
-                        found = true;
-                        break;
-                    }
-                }
-
-                if (!found) {
+                if (executable != null) {
+                    System.out.println(target + " is " + executable);
+                } else {
                     System.out.println(target + ": not found");
                 }
-
                 continue;
             }
 
-            System.out.println(command + ": command not found");
+            String executable = findExecutable(command);
+
+            if (executable != null) {
+                ProcessBuilder pb = new ProcessBuilder(parts);
+                pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
+                pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+
+                Process process = pb.start();
+                process.waitFor();
+            } else {
+                System.out.println(command + ": command not found");
+            }
         }
 
         scanner.close();
+    }
+
+    private static String findExecutable(String command) {
+        String pathEnv = System.getenv("PATH");
+
+        if (pathEnv == null) {
+            return null;
+        }
+
+        String[] paths = pathEnv.split(File.pathSeparator);
+
+        for (String dir : paths) {
+            File file = new File(dir, command);
+
+            if (file.exists() && file.isFile() && file.canExecute()) {
+                return file.getAbsolutePath();
+            }
+        }
+
+        return null;
     }
 }
