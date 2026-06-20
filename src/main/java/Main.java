@@ -2,7 +2,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Scanner;
 
@@ -52,31 +51,30 @@ public class Main {
         scanner.close();
     }
 
-    // Helper to find the status flag (+ or -) based on a job's position in the active list
     private static char getJobFlag(int index) {
         if (index == activeJobs.size() - 1) {
             return '+'; // Newest job
         } else if (index == activeJobs.size() - 2) {
             return '-'; // Second newest job
         }
-        return ' '; // Older jobs get no flag symbol
+        return ' '; 
     }
 
     private static void checkCompletedJobs() {
-        Iterator<BackgroundJob> iterator = activeJobs.iterator();
-        int idx = 0;
-        while (iterator.hasNext()) {
-            BackgroundJob job = iterator.next();
+        List<BackgroundJob> deadJobs = new ArrayList<>();
+        
+        // Step 1: Find all completed jobs without breaking early
+        for (int i = 0; i < activeJobs.size(); i++) {
+            BackgroundJob job = activeJobs.get(i);
             if (!job.process.isAlive()) {
-                char flag = getJobFlag(idx);
-                // Print with matching space alignment
+                char flag = getJobFlag(i);
                 System.out.printf("[%d]%c  Done                 %s%n", job.jobNo, flag, job.originalCommand);
-                iterator.remove();
-                // Since removing changes the list size, break and let the next loop iteration catch others
-                break; 
+                deadJobs.add(job);
             }
-            idx++;
         }
+        
+        // Step 2: Clean them from the main tracking list safely
+        activeJobs.removeAll(deadJobs);
     }
 
     private static int getNextJobNumber() {
