@@ -80,6 +80,8 @@ public class Main {
                 inDoubleQuotes = !inDoubleQuotes;
                 hasContent = true;
             } else if (inSingleQuotes || inDoubleQuotes) {
+                // When inSingleQuotes is true, backslashes fall straight into here
+                // and are safely appended as literal characters.
                 currentArg.append(ch);
             } else {
                 if (Character.isWhitespace(ch)) {
