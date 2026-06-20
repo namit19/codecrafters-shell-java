@@ -11,14 +11,14 @@ public class Main {
         while (true) {
             System.out.print("$ ");
             if (!scanner.hasNextLine()) break;
-            
+
             String input = scanner.nextLine().trim();
             if (input.isEmpty()) continue;
 
             // Parse the entire line into tokens at once, respecting quotes
             List<String> tokens = parseArguments(input);
             if (tokens.isEmpty()) continue;
-            
+
             String command = tokens.get(0);
             // Convert to array for compatibility with the rest of your architecture
             String[] parts = tokens.toArray(new String[0]);
@@ -45,6 +45,8 @@ public class Main {
                     break;
 
                 case "jobs":
+                    // Stage requirement: empty implementation.
+                    // No background jobs tracked yet, so produce no output.
                     break;
 
                 default:
@@ -133,13 +135,13 @@ public class Main {
     }
 
     /**
-     * A unified state-machine parsing loop that handles spaces, 
+     * A unified state-machine parsing loop that handles spaces,
      * single quotes, double quotes, and backslashes correctly.
      */
     private static List<String> parseArguments(String input) {
         List<String> list = new ArrayList<>();
         StringBuilder sb = new StringBuilder();
-        
+
         boolean inSingleQuotes = false;
         boolean inDoubleQuotes = false;
         boolean escaped = false;
@@ -153,7 +155,6 @@ public class Main {
                 hasContent = true;
                 escaped = false;
             } else if (c == '\\' && !inSingleQuotes) {
-                // In double quotes, backslash only escapes specific characters
                 if (inDoubleQuotes) {
                     if (i + 1 < input.length()) {
                         char next = input.charAt(i + 1);
@@ -172,7 +173,7 @@ public class Main {
                 }
             } else if (c == '\'' && !inDoubleQuotes) {
                 inSingleQuotes = !inSingleQuotes;
-                hasContent = true; // Marks that a token exists even if empty (e.g. '')
+                hasContent = true;
             } else if (c == '"' && !inSingleQuotes) {
                 inDoubleQuotes = !inDoubleQuotes;
                 hasContent = true;
