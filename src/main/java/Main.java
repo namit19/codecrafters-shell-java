@@ -12,6 +12,7 @@ public class Main {
     private static String currentDir = System.getProperty("user.dir");
     private static final List<String> BUILTINS = Arrays.asList("echo", "exit", "type", "pwd", "cd");
     private static final PrintStream ORIGINAL_OUT = System.out;
+    private static final PrintStream ORIGINAL_ERR = System.err;
 
     public static void main(String[] args) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
@@ -34,14 +35,20 @@ public class Main {
                 continue;
             }
 
-            // Extract redirection target (if any) and strip it from the token list
-            String redirectFile = null;
+            // Extract redirection targets (if any) and strip them from the token list
+            String stdoutFile = null;
+            String stderrFile = null;
             List<String> cleanedTokens = new ArrayList<>();
             for (int i = 0; i < tokens.size(); i++) {
                 String t = tokens.get(i);
                 if (t.equals(">") || t.equals("1>")) {
                     if (i + 1 < tokens.size()) {
-                        redirectFile = tokens.get(i + 1);
+                        stdoutFile = tokens.get(i + 1);
+                        i++;
+                    }
+                } else if (t.equals("2>")) {
+                    if (i + 1 < tokens.size()) {
+                        stderrFile = tokens.get(i + 1);
                         i++;
                     }
                 } else {
@@ -56,19 +63,23 @@ public class Main {
             String command = cleanedTokens.get(0);
             List<String> commandArgs = cleanedTokens.subList(1, cleanedTokens.size());
 
-            PrintStream redirectStream = null;
-            if (redirectFile != null) {
-                try {
-                    File f = new File(redirectFile);
-                    if (!f.isAbsolute()) {
-                        f = new File(currentDir, redirectFile);
-                    }
-                    redirectStream = new PrintStream(new FileOutputStream(f));
-                    System.setOut(redirectStream);
-                } catch (IOException e) {
-                    System.out.println(redirectFile + ": cannot create file");
-                    continue;
+            PrintStream stdoutStream = null;
+            PrintStream stderrStream = null;
+
+            try {
+                if (stdoutFile != null) {
+                    File f = resolveFile(stdoutFile);
+                    stdoutStream = new PrintStream(new FileOutputStream(f));
+                    System.setOut(stdoutStream);
                 }
+                if (stderrFile != null) {
+                    File f = resolveFile(stderrFile);
+                    stderrStream = new PrintStream(new FileOutputStream(f));
+                    System.setErr(stderrStream);
+                }
+            } catch (IOException e) {
+                System.out.println("cannot create redirect file");
+                continue;
             }
 
             try {
@@ -90,13 +101,18 @@ public class Main {
                         System.exit(code);
                         break;
                     default:
-                        runExternalCommand(command, cleanedTokens, redirectFile);
+                        runExternalCommand(command, cleanedTokens, stdoutFile, stderrFile);
                 }
             } finally {
-                if (redirectStream != null) {
-                    redirectStream.flush();
-                    redirectStream.close();
+                if (stdoutStream != null) {
+                    stdoutStream.flush();
+                    stdoutStream.close();
                     System.setOut(ORIGINAL_OUT);
+                }
+                if (stderrStream != null) {
+                    stderrStream.flush();
+                    stderrStream.close();
+                    System.setErr(ORIGINAL_ERR);
                 }
             }
 
@@ -104,11 +120,19 @@ public class Main {
         }
     }
 
-    private static void runExternalCommand(String command, List<String> tokens, String redirectFile) {
+    private static File resolveFile(String name) {
+        File f = new File(name);
+        if (!f.isAbsolute()) {
+            f = new File(currentDir, name);
+        }
+        return f;
+    }
+
+    private static void runExternalCommand(String command, List<String> tokens, String stdoutFile, String stderrFile) {
         File executable = findExecutable(command);
 
         if (executable == null) {
-            System.out.println(command + ": command not found");
+            System.err.println(command + ": command not found");
             return;
         }
 
@@ -116,22 +140,24 @@ public class Main {
             ProcessBuilder pb = new ProcessBuilder(tokens);
             pb.directory(new File(currentDir));
 
-            if (redirectFile != null) {
-                File f = new File(redirectFile);
-                if (!f.isAbsolute()) {
-                    f = new File(currentDir, redirectFile);
-                }
-                pb.redirectOutput(f);
-                pb.redirectError(ProcessBuilder.Redirect.INHERIT);
-                pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
+            if (stdoutFile != null) {
+                pb.redirectOutput(resolveFile(stdoutFile));
             } else {
-                pb.inheritIO();
+                pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
             }
+
+            if (stderrFile != null) {
+                pb.redirectError(resolveFile(stderrFile));
+            } else {
+                pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+            }
+
+            pb.redirectInput(ProcessBuilder.Redirect.INHERIT);
 
             Process process = pb.start();
             process.waitFor();
         } catch (IOException | InterruptedException e) {
-            System.out.println(command + ": command not found");
+            System.err.println(command + ": command not found");
         }
     }
 
@@ -179,14 +205,14 @@ public class Main {
         if (target.equals("~")) {
             String home = System.getenv("HOME");
             if (home == null) {
-                System.out.println("cd: HOME not set");
+                System.err.println("cd: HOME not set");
                 return;
             }
             target = home;
         } else if (target.startsWith("~/")) {
             String home = System.getenv("HOME");
             if (home == null) {
-                System.out.println("cd: HOME not set");
+                System.err.println("cd: HOME not set");
                 return;
             }
             target = home + target.substring(1);
@@ -203,7 +229,7 @@ public class Main {
         try {
             normalizedPath = targetFile.getCanonicalPath();
         } catch (IOException e) {
-            System.out.println("cd: " + commandArgs.get(0) + ": No such file or directory");
+            System.err.println("cd: " + commandArgs.get(0) + ": No such file or directory");
             return;
         }
 
@@ -211,7 +237,7 @@ public class Main {
         if (resolved.exists() && resolved.isDirectory()) {
             currentDir = normalizedPath;
         } else {
-            System.out.println("cd: " + commandArgs.get(0) + ": No such file or directory");
+            System.err.println("cd: " + commandArgs.get(0) + ": No such file or directory");
         }
     }
 
@@ -254,7 +280,6 @@ public class Main {
                 continue;
             }
 
-            // Not inside any quotes
             if (c == '\'') {
                 inSingleQuotes = true;
                 hasToken = true;
