@@ -15,8 +15,10 @@ public class Main {
             String input = scanner.nextLine().trim();
             if (input.isEmpty()) continue;
 
-            // Simple split by whitespace to get command and arguments
-            String[] parts = input.split("\\s+");
+            // Parse inputs into tokens, preserving spaces where necessary if quotes exist
+            String[] parts = parseArguments(input);
+            if (parts.length == 0) continue;
+            
             String command = parts[0];
 
             switch (command) {
@@ -41,11 +43,10 @@ public class Main {
                     break;
 
                 case "jobs":
-                    // Handled in the previous stage (do nothing)
+                    // Intentional blank implementation for the jobs builtin stage
                     break;
 
                 default:
-                    // Try to find the external command in the PATH environment variable
                     String executablePath = findInPath(command);
                     if (executablePath != null) {
                         executeExternalCommand(parts);
@@ -58,14 +59,10 @@ public class Main {
         scanner.close();
     }
 
-    /**
-     * Helper method to search for a executable binary within the system's PATH variable.
-     */
     private static String findInPath(String command) {
         String pathEnv = System.getenv("PATH");
         if (pathEnv == null) return null;
 
-        // Paths are separated by ":" on Unix/Linux/macOS
         String[] directories = pathEnv.split(":");
         for (String dir : directories) {
             File file = new File(dir, command);
@@ -76,21 +73,90 @@ public class Main {
         return null;
     }
 
-    /**
-     * Helper method to execute an external process using ProcessBuilder.
-     */
-    private static void executeExternalCommand(String[] commandWithArgs) {
-        try {
-            ProcessBuilder pb = new ProcessBuilder(commandWithArgs);
-            
-            // Redirect standard inputs, outputs, and errors to inherit from our Java process
-            pb.inheritIO();
-            
-            Process process = pb.start();
-            process.waitFor(); // Wait for the external program to finish executing
-        } catch (IOException | InterruptedException e) {
-            // If execution fails, fallback gracefully
-            System.out.println(commandWithArgs[0] + ": command not found");
+    private static void executeExternalCommand(String[] rawArgs) {
+        List<String> commandArgs = new ArrayList<>();
+        String redirectFile = null;
+        boolean appendMode = false;
+        boolean redirectStdout = false;
+        boolean redirectStderr = false;
+
+        // Parse redirection tokens out of the arguments array
+        for (int i = 0; i < rawArgs.length; i++) {
+            String arg = rawArgs[i];
+            if (arg.equals(">") || arg.equals("1>")) {
+                redirectStdout = true;
+                appendMode = false;
+                if (i + 1 < rawArgs.length) redirectFile = rawArgs[++i];
+            } else if (arg.equals(">>") || arg.equals("1>>")) {
+                redirectStdout = true;
+                appendMode = true;
+                if (i + 1 < rawArgs.length) redirectFile = rawArgs[++i];
+            } else if (arg.equals("2>")) {
+                redirectStderr = true;
+                appendMode = false;
+                if (i + 1 < rawArgs.length) redirectFile = rawArgs[++i];
+            } else if (arg.equals("2>>")) {
+                redirectStderr = true;
+                appendMode = true;
+                if (i + 1 < rawArgs.length) redirectFile = rawArgs[++i];
+            } else {
+                commandArgs.add(arg);
+            }
         }
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder(commandArgs);
+
+            if (redirectFile != null) {
+                File targetFile = new File(redirectFile);
+                // Ensure parent directories exist for the redirection target
+                File parentDir = targetFile.getParentFile();
+                if (parentDir != null && !parentDir.exists()) {
+                    parentDir.mkdirs();
+                }
+
+                if (redirectStdout) {
+                    pb.redirectOutput(appendMode ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
+                    pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+                } else if (redirectStderr) {
+                    pb.redirectError(appendMode ? ProcessBuilder.Redirect.appendTo(targetFile) : ProcessBuilder.Redirect.to(targetFile));
+                    pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                }
+            } else {
+                pb.inheritIO();
+            }
+
+            Process process = pb.start();
+            process.waitFor();
+        } catch (IOException | InterruptedException e) {
+            System.out.println(rawArgs[0] + ": command not found");
+        }
+    }
+
+    /**
+     * Splits arguments accurately while respecting spaces inside quotes if present.
+     */
+    private static String[] parseArguments(String input) {
+        List<String> list = new ArrayList<>();
+        StringBuilder sb = new StringBuilder();
+        boolean inQuotes = false;
+        
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if (c == '\"') {
+                inQuotes = !inQuotes;
+            } else if (c == ' ' && !inQuotes) {
+                if (sb.length() > 0) {
+                    list.add(sb.toString());
+                    sb.setLength(0);
+                }
+            } else {
+                sb.append(c);
+            }
+        }
+        if (sb.length() > 0) {
+            list.add(sb.toString());
+        }
+        return list.toArray(new String[0]);
     }
 }
