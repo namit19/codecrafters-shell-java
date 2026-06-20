@@ -5,8 +5,13 @@ public class Main {
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
 
+        // Ensure user.dir is set to current directory if not already populated
+        if (System.getProperty("user.dir") == null) {
+            System.setProperty("user.dir", new File(".").getAbsolutePath());
+        }
+
         while (true) {
-            System.out.print("$ "); // Fixed here
+            System.out.print("$ ");
             System.out.flush();
 
             if (!scanner.hasNextLine()) {
@@ -31,12 +36,14 @@ public class Main {
             } else if (command.equals("echo")) {
                 // Print arguments separated by a single space
                 for (int i = 1; i < parsedArgs.size(); i++) {
-                    System.out.print(parsedArgs.get(i)); // Fixed here
+                    System.out.print(parsedArgs.get(i));
                     if (i < parsedArgs.size() - 1) {
-                        System.out.print(" "); // Fixed here
+                        System.out.print(" ");
                     }
                 }
                 System.out.println();
+            } else if (command.equals("cd")) {
+                handleCdCommand(parsedArgs);
             } else {
                 // Handle external executables (like cat)
                 executeExternalCommand(parsedArgs);
@@ -80,6 +87,38 @@ public class Main {
         return args;
     }
 
+    private static void handleCdCommand(List<String> args) {
+        String targetPath;
+
+        // If no argument or explicitly "~", default to the HOME directory
+        if (args.size() < 2 || args.get(1).equals("~")) {
+            targetPath = System.getenv("HOME");
+            if (targetPath == null) {
+                targetPath = System.getProperty("user.home");
+            }
+        } else {
+            targetPath = args.get(1);
+        }
+
+        // Resolve absolute vs relative path safely
+        File directory = new File(targetPath);
+        if (!directory.isAbsolute()) {
+            directory = new File(System.getProperty("user.dir"), targetPath);
+        }
+
+        // Verify if directory exists and update state
+        if (directory.exists() && directory.isDirectory()) {
+            try {
+                // canonical path cleans up inner elements like "." and ".."
+                System.setProperty("user.dir", directory.getCanonicalPath());
+            } catch (IOException e) {
+                System.setProperty("user.dir", directory.getAbsolutePath());
+            }
+        } else {
+            System.out.println("cd: " + args.get(1) + ": No such file or directory");
+        }
+    }
+
     private static void executeExternalCommand(List<String> args) {
         String command = args.get(0);
         String pathEnv = System.getenv("PATH");
@@ -103,6 +142,8 @@ public class Main {
 
         try {
             ProcessBuilder pb = new ProcessBuilder(args);
+            // Ensure the executed process uses our shell's current working directory
+            pb.directory(new File(System.getProperty("user.dir"))); 
             pb.inheritIO(); 
             Process process = pb.start();
             process.waitFor();
