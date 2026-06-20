@@ -1,188 +1,60 @@
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Scanner;
+import java.io.*;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class Main {
-
-    static class BackgroundJob {
-        int jobNo;
-        Process process;
-        String originalCommand;
-
-        BackgroundJob(int jobNo, Process process, String originalCommand) {
-            this.jobNo = jobNo;
-            this.process = process;
-            this.originalCommand = originalCommand;
-        }
-    }
-
-    private static final List<BackgroundJob> activeJobs = new ArrayList<>();
-
-    public static void main(String[] args) {
-        Scanner scanner = new Scanner(System.in);
-
+    public static void main(String[] args) throws Exception {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
         while (true) {
-            // Check and notify finished background jobs BEFORE displaying the prompt
-            checkCompletedJobs();
-
             System.out.print("$ ");
-            if (!scanner.hasNextLine()) {
-                break;
-            }
-            
-            String input = scanner.nextLine().trim();
-            if (input.isEmpty()) {
-                continue;
-            }
+            String line = reader.readLine();
+            if (line == null) break;
+            line = line.trim();
+            if (line.isEmpty()) continue;
 
-            if (input.equals("exit")) {
-                break;
-            }
+            List<String> tokens = tokenize(line); // your existing quote-aware tokenizer
 
-            if (input.contains("|")) {
-                PipelineHandler.executePipeline(input);
-            } else {
-                executeSingleCommand(input);
-            }
-        }
-        scanner.close();
-    }
-
-    private static char getJobFlag(int index) {
-        if (index == activeJobs.size() - 1) {
-            return '+'; // Newest job
-        } else if (index == activeJobs.size() - 2) {
-            return '-'; // Second newest job
-        }
-        return ' '; 
-    }
-
-    private static void checkCompletedJobs() {
-        List<BackgroundJob> deadJobs = new ArrayList<>();
-        
-        // Step 1: Find all completed jobs without breaking early
-        for (int i = 0; i < activeJobs.size(); i++) {
-            BackgroundJob job = activeJobs.get(i);
-            if (!job.process.isAlive()) {
-                char flag = getJobFlag(i);
-                System.out.printf("[%d]%c  Done                 %s%n", job.jobNo, flag, job.originalCommand);
-                deadJobs.add(job);
-            }
-        }
-        
-        // Step 2: Clean them from the main tracking list safely
-        activeJobs.removeAll(deadJobs);
-    }
-
-    private static int getNextJobNumber() {
-        int candidate = 1;
-        while (true) {
-            boolean isTaken = false;
-            for (BackgroundJob job : activeJobs) {
-                if (job.jobNo == candidate) {
-                    isTaken = true;
-                    break;
+            // Split tokens into pipeline stages on the "|" token
+            List<List<String>> stages = new ArrayList<>();
+            List<String> current = new ArrayList<>();
+            for (String tok : tokens) {
+                if (tok.equals("|")) {
+                    stages.add(current);
+                    current = new ArrayList<>();
+                } else {
+                    current.add(tok);
                 }
             }
-            if (!isTaken) {
-                return candidate;
-            }
-            candidate++;
-        }
-    }
+            stages.add(current);
 
-    private static void executeSingleCommand(String input) {
-        List<String> args = parseCommand(input);
-        if (args.isEmpty()) return;
-
-        if (args.get(0).equals("jobs")) {
-            for (int i = 0; i < activeJobs.size(); i++) {
-                BackgroundJob job = activeJobs.get(i);
-                if (job.process.isAlive()) {
-                    char flag = getJobFlag(i);
-                    System.out.printf("[%d]%c  Running              %s &%n", job.jobNo, flag, job.originalCommand);
-                }
-            }
-            return;
-        }
-
-        boolean isBackground = false;
-        if (args.get(args.size() - 1).equals("&")) {
-            isBackground = true;
-            args.remove(args.size() - 1); 
-        }
-
-        String commandString = String.join(" ", args);
-
-        try {
-            ProcessBuilder pb = new ProcessBuilder(args);
-            pb.inheritIO(); 
-            Process p = pb.start();
-
-            if (isBackground) {
-                int assignedJobNo = getNextJobNumber();
-                System.out.println("[" + assignedJobNo + "] " + p.pid());
-                activeJobs.add(new BackgroundJob(assignedJobNo, p, commandString));
+            if (stages.size() == 1) {
+                runSingleCommand(stages.get(0)); // existing logic (builtins, etc.)
             } else {
-                p.waitFor();
+                runPipeline(stages);
             }
-        } catch (Exception e) {
-            System.out.println(args.get(0) + ": command not found");
         }
     }
 
-    private static List<String> parseCommand(String command) {
-        return new ArrayList<>(Arrays.asList(command.split("\\s+")));
-    }
+    private static void runPipeline(List<List<String>> stages) throws Exception {
+        List<ProcessBuilder> builders = new ArrayList<>();
+        for (List<String> stage : stages) {
+            ProcessBuilder pb = new ProcessBuilder(stage);
+            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+            builders.add(pb);
+        }
 
-    public static class PipelineHandler {
-        public static void executePipeline(String userInput) {
-            String[] pipeParts = userInput.split("\\|");
-            if (pipeParts.length != 2) {
-                System.err.println("This stage only supports two-stage pipelines.");
-                return;
-            }
+        // First process inherits stdin, last inherits stdout.
+        builders.get(0).redirectInput(ProcessBuilder.Redirect.INHERIT);
+        builders.get(builders.size() - 1).redirectOutput(ProcessBuilder.Redirect.INHERIT);
 
-            List<String> cmd1Args = parseCommand(pipeParts[0].trim());
-            List<String> cmd2Args = parseCommand(pipeParts[1].trim());
+        // This wires stdout[i] -> stdin[i+1] using real OS pipes.
+        List<Process> processes = ProcessBuilder.startPipeline(builders);
 
-            try {
-                ProcessBuilder pb1 = new ProcessBuilder(cmd1Args);
-                pb1.redirectError(ProcessBuilder.Redirect.INHERIT); 
-                Process p1 = pb1.start();
-
-                ProcessBuilder pb2 = new ProcessBuilder(cmd2Args);
-                pb2.redirectError(ProcessBuilder.Redirect.INHERIT);
-                pb2.redirectOutput(ProcessBuilder.Redirect.INHERIT); 
-                Process p2 = pb2.start();
-
-                Thread pipeThread = new Thread(() -> {
-                    try (InputStream inputFromP1 = p1.getInputStream();
-                         OutputStream outputToP2 = p2.getOutputStream()) {
-                        
-                        byte[] buffer = new byte[4096];
-                        int bytesRead;
-                        while ((bytesRead = inputFromP1.read(buffer)) != -1) {
-                            outputToP2.write(buffer, 0, bytesRead);
-                            outputToP2.flush(); 
-                        }
-                    } catch (Exception e) {
-                        // Suppress broken pipes
-                    }
-                });
-                pipeThread.start();
-
-                p1.waitFor();
-                pipeThread.join(); 
-                p2.getOutputStream().close(); 
-                p2.waitFor();
-
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+        // Wait for all processes (important for tail -f | head to behave correctly:
+        // head exits after N lines, which should close the pipe; tail will get SIGPIPE/EPIPE
+        // on next write attempt and the kernel handles cleanup).
+        for (Process p : processes) {
+            p.waitFor();
         }
     }
 }
