@@ -5,8 +5,6 @@ import java.util.List;
 import java.util.Scanner;
 
 public class Main {
-    // Tracks the shell's "current working directory" since a Java process
-    // cannot truly chdir(); we resolve all relative paths against this.
     private static String currentDir = System.getProperty("user.dir");
 
     // Background job tracking
@@ -40,11 +38,9 @@ public class Main {
             String input = scanner.nextLine().trim();
             if (input.isEmpty()) continue;
 
-            // Parse the entire line into tokens at once, respecting quotes
             List<String> tokens = parseArguments(input);
             if (tokens.isEmpty()) continue;
 
-            // Check for trailing "&" -> run in background
             boolean background = false;
             if (!tokens.isEmpty() && tokens.get(tokens.size() - 1).equals("&")) {
                 background = true;
@@ -88,33 +84,34 @@ public class Main {
                     break;
 
                 case "jobs":
-                    // Gather currently alive jobs to dynamically compute markers (+ and -)
-                    List<Job> aliveJobs = new ArrayList<>();
-                    for (Job job : jobs) {
-                        if (job.process.isAlive()) {
-                            aliveJobs.add(job);
+                    // 1. Snapshot active running jobs *before* printing or modifying state
+                    List<Job> activeJobs = new ArrayList<>();
+                    for (Job j : jobs) {
+                        if (j.process.isAlive()) {
+                            activeJobs.add(j);
                         }
                     }
 
                     List<Job> reaped = new ArrayList<>();
 
-                    // Print all tracking jobs sequentially by job number
+                    // 2. Loop through all tracked jobs sequentially by job number
                     for (int i = 0; i < jobs.size(); i++) {
                         Job job = jobs.get(i);
                         char marker = ' ';
 
                         if (job.process.isAlive()) {
-                            int activeIdx = aliveJobs.indexOf(job);
-                            if (aliveJobs.size() == 1 || activeIdx == aliveJobs.size() - 1) {
+                            // Target alive job relative index positioning
+                            int idx = activeJobs.indexOf(job);
+                            if (activeJobs.size() == 1 || idx == activeJobs.size() - 1) {
                                 marker = '+';
-                            } else if (activeIdx == aliveJobs.size() - 2) {
+                            } else if (idx == activeJobs.size() - 2) {
                                 marker = '-';
                             }
 
                             String statusField = String.format("%-24s", "Running");
                             System.out.println("[" + job.number + "]" + marker + "  " + statusField + job.command);
                         } else {
-                            // If it's dead, compute its temporary position marker contextually
+                            // If it's dead, evaluate its structural marker assignment relative to the absolute list length
                             if (jobs.size() == 1 || i == jobs.size() - 1) {
                                 marker = '+';
                             } else if (i == jobs.size() - 2) {
@@ -127,7 +124,7 @@ public class Main {
                         }
                     }
 
-                    // Remove completed jobs from table so they don't appear next time
+                    // Flush dead elements out of global list entirely
                     jobs.removeAll(reaped);
                     break;
 
@@ -152,13 +149,8 @@ public class Main {
         scanner.close();
     }
 
-    /**
-     * Automatic reaping logic called explicitly before the prompt is printed.
-     * Only displays and flushes jobs that have exited normally.
-     */
     private static void reapDeadJobsBeforePrompt() {
         List<Job> reaped = new ArrayList<>();
-        
         for (int i = 0; i < jobs.size(); i++) {
             Job job = jobs.get(i);
             if (!job.process.isAlive()) {
