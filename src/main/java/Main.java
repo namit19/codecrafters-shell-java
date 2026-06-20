@@ -48,9 +48,42 @@ public class Main {
                     System.exit(code);
                     break;
                 default:
-                    System.out.println(command + ": command not found");
+                    runExternalCommand(command, tokens);
             }
         }
+    }
+
+    private static void runExternalCommand(String command, List<String> tokens) {
+        File executable = findExecutable(command);
+
+        if (executable == null) {
+            System.out.println(command + ": command not found");
+            return;
+        }
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder(tokens);
+            pb.directory(new File(currentDir));
+            pb.inheritIO(); // pass through stdin/stdout/stderr
+            Process process = pb.start();
+            process.waitFor();
+        } catch (IOException | InterruptedException e) {
+            System.out.println(command + ": command not found");
+        }
+    }
+
+    private static File findExecutable(String name) {
+        String pathEnv = System.getenv("PATH");
+        if (pathEnv == null) {
+            return null;
+        }
+        for (String dir : pathEnv.split(File.pathSeparator)) {
+            File candidate = new File(dir, name);
+            if (candidate.isFile() && candidate.canExecute()) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private static void handleType(List<String> commandArgs) {
@@ -64,15 +97,10 @@ public class Main {
             return;
         }
 
-        String pathEnv = System.getenv("PATH");
-        if (pathEnv != null) {
-            for (String dir : pathEnv.split(File.pathSeparator)) {
-                File candidate = new File(dir, name);
-                if (candidate.isFile() && candidate.canExecute()) {
-                    System.out.println(name + " is " + candidate.getPath());
-                    return;
-                }
-            }
+        File found = findExecutable(name);
+        if (found != null) {
+            System.out.println(name + " is " + found.getPath());
+            return;
         }
 
         System.out.println(name + ": not found");
