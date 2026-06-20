@@ -5,6 +5,10 @@ import java.util.List;
 import java.util.Scanner;
 
 public class Main {
+    // Tracks the shell's "current working directory" since a Java process
+    // cannot truly chdir(); we resolve all relative paths against this.
+    private static String currentDir = System.getProperty("user.dir");
+
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
 
@@ -31,7 +35,8 @@ public class Main {
                 case "type":
                     if (parts.length > 1) {
                         String target = parts[1];
-                        if (target.equals("jobs") || target.equals("exit") || target.equals("type")) {
+                        if (target.equals("jobs") || target.equals("exit") || target.equals("type")
+                                || target.equals("cd") || target.equals("pwd") || target.equals("echo")) {
                             System.out.println(target + " is a shell builtin");
                         } else {
                             String pathToFile = findInPath(target);
@@ -49,6 +54,14 @@ public class Main {
                     // No background jobs tracked yet, so produce no output.
                     break;
 
+                case "cd":
+                    handleCd(parts);
+                    break;
+
+                case "pwd":
+                    System.out.println(currentDir);
+                    break;
+
                 default:
                     String executablePath = findInPath(command);
                     if (executablePath != null) {
@@ -60,6 +73,51 @@ public class Main {
             }
         }
         scanner.close();
+    }
+
+    private static void handleCd(String[] parts) {
+        String target;
+        if (parts.length < 2 || parts[1].isEmpty()) {
+            target = "~";
+        } else {
+            target = parts[1];
+        }
+
+        if (target.equals("~")) {
+            String home = System.getenv("HOME");
+            if (home == null) {
+                System.out.println("cd: HOME not set");
+                return;
+            }
+            target = home;
+        } else if (target.startsWith("~/")) {
+            String home = System.getenv("HOME");
+            if (home == null) {
+                System.out.println("cd: HOME not set");
+                return;
+            }
+            target = home + target.substring(1);
+        }
+
+        File dir = resolvePath(target);
+        if (dir.isDirectory()) {
+            try {
+                currentDir = dir.getCanonicalPath();
+            } catch (IOException e) {
+                currentDir = dir.getAbsolutePath();
+            }
+        } else {
+            System.out.println("cd: " + target + ": No such file or directory");
+        }
+    }
+
+    // Resolves a path against the shell's tracked current directory.
+    private static File resolvePath(String path) {
+        File f = new File(path);
+        if (f.isAbsolute()) {
+            return f;
+        }
+        return new File(currentDir, path);
     }
 
     private static String findInPath(String command) {
@@ -108,9 +166,10 @@ public class Main {
 
         try {
             ProcessBuilder pb = new ProcessBuilder(commandArgs);
+            pb.directory(new File(currentDir));
 
             if (redirectFile != null) {
-                File targetFile = new File(redirectFile);
+                File targetFile = resolvePath(redirectFile);
                 File parentDir = targetFile.getParentFile();
                 if (parentDir != null && !parentDir.exists()) {
                     parentDir.mkdirs();
