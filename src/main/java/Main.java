@@ -316,7 +316,7 @@ public class Main {
     private static void printJobs() {
         synchronized (jobsLock) {
             for (Job j : jobs.values()) {
-                System.out.println("[" + j.number + "]  " + j.pid + "  " + j.commandLine);
+                System.out.println(formatStatusLine(j, "Running") + " &");
             }
         }
     }
