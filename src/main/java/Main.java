@@ -1,9 +1,9 @@
 import java.io.File;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Scanner;
 
 public class Main {
+
     public static void main(String[] args) throws IOException, InterruptedException {
         Scanner scanner = new Scanner(System.in);
 
@@ -32,6 +32,11 @@ public class Main {
                 continue;
             }
 
+            if (command.equals("pwd")) {
+                System.out.println(System.getProperty("user.dir"));
+                continue;
+            }
+
             if (command.equals("type")) {
                 if (parts.length < 2) {
                     continue;
@@ -41,7 +46,8 @@ public class Main {
 
                 if (target.equals("echo") ||
                     target.equals("exit") ||
-                    target.equals("type")) {
+                    target.equals("type") ||
+                    target.equals("pwd")) {
                     System.out.println(target + " is a shell builtin");
                     continue;
                 }
