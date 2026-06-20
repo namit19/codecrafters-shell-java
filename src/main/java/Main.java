@@ -488,7 +488,7 @@ public class Main {
                 continue;
             }
 
-            runExternal();
+            runExternal(r);
         }
 
         sc.close();
