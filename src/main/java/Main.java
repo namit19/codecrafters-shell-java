@@ -6,7 +6,7 @@ public class Main {
         Scanner scanner = new Scanner(System.in);
 
         while (true) {
-            System.print("$ ");
+            System.out.print("$ "); // Fixed here
             System.out.flush();
 
             if (!scanner.hasNextLine()) {
@@ -31,9 +31,9 @@ public class Main {
             } else if (command.equals("echo")) {
                 // Print arguments separated by a single space
                 for (int i = 1; i < parsedArgs.size(); i++) {
-                    System.print(parsedArgs.get(i));
+                    System.out.print(parsedArgs.get(i)); // Fixed here
                     if (i < parsedArgs.size() - 1) {
-                        System.print(" ");
+                        System.out.print(" "); // Fixed here
                     }
                 }
                 System.out.println();
@@ -49,24 +49,21 @@ public class Main {
         List<String> args = new ArrayList<>();
         StringBuilder currentArg = new StringBuilder();
         boolean inSingleQuotes = false;
-        boolean hasContent = false; // Ensures empty quotes '' are handled without discarding the argument context
+        boolean hasContent = false; 
 
         for (int i = 0; i < commandLine.length(); i++) {
             char ch = commandLine.charAt(i);
 
             if (ch == '\'') {
-                // Toggle quote state
                 inSingleQuotes = !inSingleQuotes;
                 hasContent = true; 
             } else if (inSingleQuotes) {
-                // Inside single quotes, everything is literal
                 currentArg.append(ch);
             } else {
-                // Outside single quotes, whitespace acts as a delimiter
                 if (Character.isWhitespace(ch)) {
                     if (currentArg.length() > 0 || hasContent) {
                         args.add(currentArg.toString());
-                        currentArg.setLength(0); // Clear buffer
+                        currentArg.setLength(0); 
                         hasContent = false;
                     }
                 } else {
@@ -76,7 +73,6 @@ public class Main {
             }
         }
 
-        // Add the final argument if remaining
         if (currentArg.length() > 0 || hasContent) {
             args.add(currentArg.toString());
         }
@@ -86,8 +82,6 @@ public class Main {
 
     private static void executeExternalCommand(List<String> args) {
         String command = args.get(0);
-        
-        // Check if command exists in system PATH
         String pathEnv = System.getenv("PATH");
         boolean found = false;
 
@@ -108,9 +102,8 @@ public class Main {
         }
 
         try {
-            // ProcessBuilder passes arguments exactly as parsed, bypassing shell re-tokenization
             ProcessBuilder pb = new ProcessBuilder(args);
-            pb.inheritIO(); // Routes stdout/stderr directly to the terminal
+            pb.inheritIO(); 
             Process process = pb.start();
             process.waitFor();
         } catch (Exception e) {
