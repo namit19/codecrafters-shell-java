@@ -50,12 +50,9 @@ public class Main {
             }
 
             String command = tokens.get(0);
-            // Convert to array for compatibility with the rest of your architecture
             String[] parts = tokens.toArray(new String[0]);
 
             if (background) {
-                // Builtins generally aren't meaningfully backgrounded in this shell,
-                // but we still honor "&" for external commands as required by this stage.
                 String executablePath = findInPath(command);
                 if (executablePath != null) {
                     runInBackground(parts, input);
@@ -88,8 +85,14 @@ public class Main {
                     break;
 
                 case "jobs":
-                    // Stage requirement (background-jobs intro): empty implementation.
-                    // Listing jobs is handled in a later stage.
+                    // Format required: [1]+  Running                 sleep 10 &
+                    // "Running" padded to 24 characters total, preceded by two spaces after '+'
+                    for (Job job : jobs) {
+                        if (job.process.isAlive()) {
+                            String statusField = String.format("%-24s", "Running");
+                            System.out.println("[" + job.number + "]+  " + statusField + job.command);
+                        }
+                    }
                     break;
 
                 case "cd":
@@ -113,8 +116,6 @@ public class Main {
         scanner.close();
     }
 
-    // Starts a command in the background: doesn't wait for it to finish,
-    // prints "[jobNumber] pid", and returns immediately to the prompt.
     private static void runInBackground(String[] rawArgs, String originalCommandLine) {
         List<String> commandArgs = new ArrayList<>();
         String redirectFile = null;
@@ -167,14 +168,13 @@ public class Main {
                 pb.inheritIO();
             }
 
-            // Start the process but do NOT wait for it - that's what makes it "background".
             Process process = pb.start();
 
-            int jobNumber = nextJobNumber++;
+            int javaJobNumber = nextJobNumber++;
             long pid = process.pid();
-            jobs.add(new Job(jobNumber, pid, originalCommandLine, process));
+            jobs.add(new Job(javaJobNumber, pid, originalCommandLine, process));
 
-            System.out.println("[" + jobNumber + "] " + pid);
+            System.out.println("[" + javaJobNumber + "] " + pid);
         } catch (IOException e) {
             System.out.println(rawArgs[0] + ": command not found");
         }
@@ -216,7 +216,6 @@ public class Main {
         }
     }
 
-    // Resolves a path against the shell's tracked current directory.
     private static File resolvePath(String path) {
         File f = new File(path);
         if (f.isAbsolute()) {
@@ -298,10 +297,6 @@ public class Main {
         }
     }
 
-    /**
-     * A unified state-machine parsing loop that handles spaces,
-     * single quotes, double quotes, and backslashes correctly.
-     */
     private static List<String> parseArguments(String input) {
         List<String> list = new ArrayList<>();
         StringBuilder sb = new StringBuilder();
