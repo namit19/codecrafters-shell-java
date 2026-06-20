@@ -9,30 +9,40 @@ public class Main {
 
             String input = scanner.nextLine();
 
-            if (input.equals("exit 0")) {
+            String[] parts = input.split(" ", 2);
+            String command = parts[0];
+
+            if (command.equals("exit")) {
                 break;
             }
 
-            if (input.startsWith("echo ")) {
-                System.out.println(input.substring(5));
-                continue;
-            }
-
-            if (input.startsWith("type ")) {
-                String command = input.substring(5);
-
-                if (command.equals("echo") ||
-                    command.equals("exit") ||
-                    command.equals("type")) {
-                    System.out.println(command + " is a shell builtin");
+            if (command.equals("echo")) {
+                if (parts.length > 1) {
+                    System.out.println(parts[1]);
                 } else {
-                    System.out.println(command + ": not found");
+                    System.out.println();
                 }
                 continue;
             }
 
-            String command = input.split(" ")[0];
+            if (command.equals("type")) {
+                if (parts.length > 1) {
+                    String arg = parts[1];
+
+                    if (arg.equals("echo") ||
+                        arg.equals("exit") ||
+                        arg.equals("type")) {
+                        System.out.println(arg + " is a shell builtin");
+                    } else {
+                        System.out.println(arg + ": not found");
+                    }
+                }
+                continue;
+            }
+
             System.out.println(command + ": command not found");
         }
+
+        scanner.close();
     }
 }
