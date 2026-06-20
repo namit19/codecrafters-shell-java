@@ -3,10 +3,12 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class Main {
     private static String currentDir = System.getProperty("user.dir");
+    private static final List<String> BUILTINS = Arrays.asList("echo", "exit", "type", "pwd", "cd");
 
     public static void main(String[] args) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
@@ -16,7 +18,7 @@ public class Main {
             String input = reader.readLine();
 
             if (input == null) {
-                break; // EOF (Ctrl+D)
+                break;
             }
 
             input = input.trim();
@@ -38,6 +40,9 @@ public class Main {
                 case "cd":
                     handleCd(commandArgs);
                     break;
+                case "type":
+                    handleType(commandArgs);
+                    break;
                 case "exit":
                     int code = commandArgs.isEmpty() ? 0 : Integer.parseInt(commandArgs.get(0));
                     System.exit(code);
@@ -48,14 +53,38 @@ public class Main {
         }
     }
 
+    private static void handleType(List<String> commandArgs) {
+        if (commandArgs.isEmpty()) {
+            return;
+        }
+        String name = commandArgs.get(0);
+
+        if (BUILTINS.contains(name)) {
+            System.out.println(name + " is a shell builtin");
+            return;
+        }
+
+        String pathEnv = System.getenv("PATH");
+        if (pathEnv != null) {
+            for (String dir : pathEnv.split(File.pathSeparator)) {
+                File candidate = new File(dir, name);
+                if (candidate.isFile() && candidate.canExecute()) {
+                    System.out.println(name + " is " + candidate.getPath());
+                    return;
+                }
+            }
+        }
+
+        System.out.println(name + ": not found");
+    }
+
     private static void handleCd(List<String> commandArgs) {
         if (commandArgs.isEmpty()) {
-            return; // could default to HOME, but not required here
+            return;
         }
 
         String target = commandArgs.get(0);
 
-        // Handle ~ (home directory)
         if (target.equals("~")) {
             target = System.getenv("HOME");
         } else if (target.startsWith("~/")) {
@@ -64,10 +93,8 @@ public class Main {
 
         File targetFile;
         if (target.startsWith("/")) {
-            // Absolute path
             targetFile = new File(target);
         } else {
-            
             targetFile = new File(currentDir, target);
         }
 
